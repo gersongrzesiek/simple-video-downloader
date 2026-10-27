@@ -339,7 +339,7 @@ class MainActivity : AppCompatActivity(), BrowserClient.Listener {
             binding.fullscreenContainer.addView(view, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             binding.fullscreenContainer.isVisible = true
             binding.browserContainer.isVisible = false
-            setImmersive(true)
+            setFullscreenMode(true)
         }
 
         override fun onHideCustomView() {
@@ -355,10 +355,10 @@ class MainActivity : AppCompatActivity(), BrowserClient.Listener {
         customView = null
         customViewCallback?.onCustomViewHidden()
         customViewCallback = null
-        setImmersive(false)
+        setFullscreenMode(false)
     }
 
-    private fun setImmersive(enabled: Boolean) {
+    private fun setFullscreenMode(enabled: Boolean) {
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         if (enabled) {
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
