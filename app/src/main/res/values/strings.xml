@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Video Downloader</string>
+    <string name="url_hint">Buscar o escribir dirección</string>
+    <string name="blocked_badge_description">Anuncios bloqueados en esta página</string>
+    <string name="fab_videos">Vídeos (%1$d)</string>
+    <string name="detected_title">Vídeos encontrados en esta página</string>
+    <string name="download">Descargar</string>
+    <string name="downloading">Descargando…</string>
+    <string name="download_complete">Descarga completada. Toca para abrir.</string>
+    <string name="download_started">Descarga iniciada: %1$s</string>
+    <string name="download_unsupported_dash">Este vídeo usa DASH, que todavía no se puede descargar.</string>
+    <string name="download_unsupported_site">Este sitio no permite descargar sus vídeos.</string>
+    <string name="choose_quality">Elige la calidad</string>
+    <string name="reading_playlist">Leyendo calidades disponibles…</string>
+    <string name="playlist_error">No se pudo leer el vídeo: %1$s</string>
+    <string name="cancel">Cancelar</string>
+    <string name="open">Abrir</string>
+    <string name="retry">Reintentar</string>
+    <string name="back">Atrás</string>
+    <string name="forward">Adelante</string>
+    <string name="reload">Recargar</string>
+    <string name="home">Inicio</string>
+    <string name="block_here">Bloquear anuncios en este sitio</string>
+    <string name="downloads">Descargas</string>
+    <string name="settings">Ajustes</string>
+    <string name="clear_finished">Borrar terminadas de la lista</string>
+    <string name="downloads_empty">Aquí aparecerán tus descargas.\nAbre una página con vídeo y toca el botón rojo.</string>
+    <string name="status_queued">En cola</string>
+    <string name="status_running">Descargando %1$s</string>
+    <string name="status_done">Guardado en Descargas/SimpleVideoDownloader</string>
+    <string name="status_failed">Error: %1$s</string>
+    <string name="status_cancelled">Cancelada</string>
+    <string name="notification_channel_downloads">Descargas</string>
+    <string name="no_app_to_open">No hay ninguna app para abrir este archivo</string>
+    <string name="storage_permission_needed">Hace falta permiso de almacenamiento para guardar el vídeo</string>
+
+    <!-- Ajustes -->
+    <string name="pref_category_adblock">Bloqueador de anuncios</string>
+    <string name="pref_adblock_enabled">Bloquear anuncios y rastreadores</string>
+    <string name="pref_adblock_cosmetic">Ocultar huecos de anuncios</string>
+    <string name="pref_adblock_cosmetic_summary">Esconde los recuadros vacíos que dejan los anuncios bloqueados</string>
+    <string name="pref_adblock_lists">Listas de filtros</string>
+    <string name="pref_adblock_update">Actualizar listas ahora</string>
+    <string name="pref_adblock_update_summary">%1$d reglas de red y %2$d de ocultación. Última actualización: %3$s</string>
+    <string name="pref_adblock_never">nunca</string>
+    <string name="pref_adblock_updating">Actualizando…</string>
+    <string name="pref_adblock_updated">%1$d listas actualizadas</string>
+    <string name="pref_adblock_update_failed">No se pudo descargar ninguna lista. Revisa la conexión.</string>
+    <string name="pref_allowlist">Sitios sin bloqueo</string>
+    <string name="pref_allowlist_summary_empty">Ninguno. Puedes permitir anuncios en un sitio desde el menú del navegador.</string>
+    <string name="pref_allowlist_clear_title">¿Volver a bloquear en todos los sitios?</string>
+    <string name="pref_allowlist_clear">Volver a bloquear</string>
+    <string name="pref_category_about">Acerca de</string>
+    <string name="pref_about_summary">Versión %1$s. Sin anuncios ni rastreadores. Descarga solo contenido que tengas derecho a guardar.</string>
+</resources>
