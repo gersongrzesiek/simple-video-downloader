@@ -61,4 +61,14 @@ class HlsParserTest {
         assertEquals(100L..149L, media.segments[1].byteRange)
         assertTrue(media.isLive)
     }
+
+    @Test
+    fun childrenInheritSignedQuery() {
+        val base = "https://cdn.x.com/hls/v/1080P.mp4/master.m3u8?validto=99&hash=abc"
+        assertEquals("https://cdn.x.com/hls/v/1080P.mp4/index-v1.m3u8?validto=99&hash=abc", HlsParser.resolve(base, "index-v1.m3u8"))
+        assertEquals("https://cdn.x.com/hls/v/1080P.mp4/seg-1.ts?t=1", HlsParser.resolve(base, "seg-1.ts?t=1"))
+        assertEquals("https://other.com/seg-1.ts", HlsParser.resolve(base, "https://other.com/seg-1.ts"))
+        assertEquals("https://cdn.x.com/a/seg.ts", HlsParser.resolve("https://cdn.x.com/a/list.m3u8", "seg.ts"))
+        assertEquals("https://cdn.x.com/a/seg.ts?k=a|b", HlsParser.resolve("https://cdn.x.com/a/list.m3u8?k=a|b", "seg.ts"))
+    }
 }

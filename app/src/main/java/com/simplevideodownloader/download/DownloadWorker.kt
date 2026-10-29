@@ -25,6 +25,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import okhttp3.Response
 import java.io.IOException
@@ -191,7 +192,10 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
     private fun execute(url: String, range: String? = null): Response {
         val request = Request.Builder().url(url).apply {
-            inputData.getString(KEY_REFERER)?.takeIf { it.startsWith("http") }?.let { header("Referer", it) }
+            inputData.getString(KEY_REFERER)?.takeIf { it.startsWith("http") }?.let {
+                header("Referer", it)
+                originOf(it)?.let { origin -> header("Origin", origin) }
+            }
             inputData.getString(KEY_USER_AGENT)?.let { header("User-Agent", it) }
             inputData.getString(KEY_COOKIES)?.let { header("Cookie", it) }
             range?.let { header("Range", it) }
@@ -203,6 +207,9 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         }
         return response
     }
+
+    private fun originOf(url: String): String? =
+        url.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" }
 
     private fun fetchText(url: String): String = execute(url).use { it.body!!.string() }
 

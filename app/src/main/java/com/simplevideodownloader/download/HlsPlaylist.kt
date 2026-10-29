@@ -130,6 +130,29 @@ object HlsParser {
         return ByteArray(clean.length / 2) { clean.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
     }
 
-    fun resolve(base: String, relative: String): String =
-        runCatching { URI(base).resolve(relative.replace(" ", "%20")).toString() }.getOrDefault(relative)
+    /**
+     * URL absoluta de una entrada de la lista. Si la entrada no trae parámetros y está en el mismo servidor,
+     * hereda los de la lista: muchos CDN firman la lista con un token (`?validto=...&hash=...`) y exigen el
+     * mismo token en las partes.
+     */
+    fun resolve(base: String, relative: String): String {
+        val clean = relative.trim().replace(" ", "%20")
+        val absolute = runCatching { URI(base).resolve(clean).toString() }.getOrNull() ?: resolveByHand(base, clean)
+        val baseQuery = base.substringBefore('#').substringAfter('?', "")
+        if (baseQuery.isEmpty() || absolute.contains('?') || hostOf(absolute) != hostOf(base)) return absolute
+        return "$absolute?$baseQuery"
+    }
+
+    /** Para URLs con caracteres que `java.net.URI` no acepta (`|`, `^`, `{`...). */
+    private fun resolveByHand(base: String, relative: String): String {
+        if (relative.startsWith("http://") || relative.startsWith("https://")) return relative
+        val scheme = base.substringBefore("://")
+        if (relative.startsWith("//")) return "$scheme:$relative"
+        val path = base.substringBefore('?').substringBefore('#')
+        val origin = path.substring(0, path.indexOf('/', scheme.length + 3).takeIf { it > 0 } ?: path.length)
+        if (relative.startsWith("/")) return origin + relative
+        return path.substringBeforeLast('/') + "/" + relative
+    }
+
+    private fun hostOf(url: String) = url.substringAfter("://").substringBefore('/').substringBefore('?').lowercase()
 }

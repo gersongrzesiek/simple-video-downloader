@@ -28,6 +28,9 @@ data class DetectedMedia(
  * `shouldInterceptRequest` (hilos de fondo) y la interfaz observa [items].
  */
 class MediaDetector {
+    /** User-Agent del navegador: WebView no siempre lo incluye en las cabeceras que nos pasa. */
+    @Volatile var defaultUserAgent: String? = null
+
     private val lock = Any()
     private val byKey = LinkedHashMap<String, DetectedMedia>()
     /** Medios descartados en esta página (gifs, clips diminutos), para no volver a añadirlos. */
@@ -61,7 +64,7 @@ class MediaDetector {
         cookies: String?,
     ) {
         val referer = headers.entries.firstOrNull { it.key.equals("Referer", true) }?.value ?: pageUrl
-        val userAgent = headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value
+        val userAgent = headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value ?: defaultUserAgent
         consider(url, pageUrl, pageTitle, referer, userAgent, cookies, foundInPage = false)
     }
 

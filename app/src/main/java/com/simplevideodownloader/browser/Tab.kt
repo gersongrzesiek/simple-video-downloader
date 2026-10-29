@@ -74,6 +74,7 @@ class Tab(context: Context, private val host: Host) : BrowserClient.Listener {
     @Volatile var optionsFor: List<DetectedMedia> = emptyList()
 
     private val userAgent: String? = runCatching { webView.settings.userAgentString }.getOrNull()
+        .also { detector.defaultUserAgent = it }
 
     /** Si la pestaña tiene una web cargada detrás de la página de inicio. */
     val hasPage: Boolean get() = (client.pageUrl ?: requestedUrl ?: lazyUrl) != null

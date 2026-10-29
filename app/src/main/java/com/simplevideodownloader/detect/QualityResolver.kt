@@ -11,6 +11,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import okhttp3.Response
 import java.util.concurrent.Executors
@@ -199,7 +200,10 @@ object QualityResolver {
 
     private fun fetch(media: DetectedMedia, url: String, range: String? = null): Response {
         val request = Request.Builder().url(url).apply {
-            media.referer?.takeIf { it.startsWith("http") }?.let { header("Referer", it) }
+            media.referer?.takeIf { it.startsWith("http") }?.let { referer ->
+                header("Referer", referer)
+                referer.toHttpUrlOrNull()?.let { header("Origin", "${it.scheme}://${it.host}") }
+            }
             media.userAgent?.let { header("User-Agent", it) }
             media.cookies?.let { header("Cookie", it) }
             range?.let { header("Range", it) }
