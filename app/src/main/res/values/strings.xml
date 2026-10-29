@@ -3,7 +3,7 @@
     <string name="app_name">Video Downloader</string>
     <string name="url_hint">Buscar o escribir dirección</string>
     <string name="blocked_badge_description">Anuncios bloqueados en esta página</string>
-    <string name="fab_videos">Vídeos (%1$d)</string>
+    <string name="fab_videos">Descargar %1$s</string>
     <string name="detected_title">Vídeos encontrados en esta página</string>
     <string name="download">Descargar</string>
     <string name="downloading">Descargando…</string>

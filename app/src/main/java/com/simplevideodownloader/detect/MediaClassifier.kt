@@ -63,6 +63,30 @@ object MediaClassifier {
         return probeHints.any { lower.contains(it) }
     }
 
+    /** Por debajo de este tamaño un "vídeo" suele ser un gif animado, una miniatura en movimiento o un clip de anuncio. */
+    const val MIN_VIDEO_BYTES = 700_000L
+
+    private val adPath = Regex("(?:^|[/_.=-])(?:ads?|adserver|adunit|advert\\w*|vast|vpaid|preroll|midroll|postroll)(?:[/_.=&?-]|$)", RegexOption.IGNORE_CASE)
+    private val adHosts = listOf("doubleclick.", "googlesyndication.", "imasdk.", "adnxs.", "adsrvr.", "moatads.", "springserve.", "spotxchange.", "teads.")
+
+    /** URLs de vídeo con pinta de anuncio (rutas /ads/, /vast/, preroll... o servidores de publicidad conocidos). */
+    fun looksLikeAd(url: String): Boolean {
+        val lower = url.lowercase()
+        val host = lower.substringAfter("://").substringBefore('/')
+        if (adHosts.any { host.contains(it) }) return true
+        return adPath.containsMatchIn(lower.substringAfter("://").substringAfter('/', ""))
+    }
+
+    /**
+     * Un elemento `<video>` que se comporta como un gif: en bucle y sin sonido ni controles, muy pequeño
+     * en pantalla o de pocos segundos. Ancho/alto 0 o duración negativa significan "no se sabe".
+     */
+    fun isGifLike(width: Int, height: Int, loop: Boolean, muted: Boolean, controls: Boolean, durationSec: Double): Boolean {
+        if (loop && muted && !controls) return true
+        if (width in 1..159 && height in 1..119) return true
+        return durationSec in 0.1..6.0
+    }
+
     private val heightP = Regex("(?<![0-9])(\\d{3,4})[pP](?![a-zA-Z])")
     private val dimensions = Regex("(?<![0-9])\\d{3,4}[xX](\\d{3,4})(?![0-9])")
     private val validHeights = 120..4320

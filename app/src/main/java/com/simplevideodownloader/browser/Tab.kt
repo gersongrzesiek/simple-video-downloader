@@ -17,9 +17,15 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.simplevideodownloader.adblock.AdBlocker
 import com.simplevideodownloader.adblock.ResourceType
+import com.simplevideodownloader.detect.DetectedMedia
+import com.simplevideodownloader.detect.DownloadOption
+import com.simplevideodownloader.detect.MediaClassifier
 import com.simplevideodownloader.detect.MediaDetector
+import com.simplevideodownloader.detect.PageScanner
 import com.simplevideodownloader.download.DownloadRequest
 import com.simplevideodownloader.ui.BrowserClient
+import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -61,6 +67,14 @@ class Tab(context: Context, private val host: Host) : BrowserClient.Listener {
     val url: String? get() = if (isHome) null else client.pageUrl ?: requestedUrl ?: lazyUrl
     val title: String? get() = if (isHome) null else (client.pageTitle ?: webView.title)?.takeIf { it.isNotBlank() }
 
+    /** Calidades ya consultadas de los vídeos de esta página, para mostrarlas al instante. */
+    val optionCache = ConcurrentHashMap<String, List<DownloadOption>>()
+    @Volatile var options: List<DownloadOption> = emptyList()
+    /** Los medios detectados a los que corresponden [options]. */
+    @Volatile var optionsFor: List<DetectedMedia> = emptyList()
+
+    private val userAgent: String? = runCatching { webView.settings.userAgentString }.getOrNull()
+
     /** Si la pestaña tiene una web cargada detrás de la página de inicio. */
     val hasPage: Boolean get() = (client.pageUrl ?: requestedUrl ?: lazyUrl) != null
 
@@ -94,8 +108,11 @@ class Tab(context: Context, private val host: Host) : BrowserClient.Listener {
         }
         // El CSS de ocultación se pide al principio de cada documento, antes de que se pinte la página.
         webView.addJavascriptInterface(CosmeticBridge(), "SVDAdBlock")
+        // Y el buscador de vídeos de la página, para no tener que darle a reproducir.
+        webView.addJavascriptInterface(MediaBridge(), PageScanner.BRIDGE)
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(webView, COSMETIC_SCRIPT, setOf("*"))
+            WebViewCompat.addDocumentStartJavaScript(webView, PageScanner.SCRIPT, setOf("*"))
             documentStartScript = true
         }
     }
@@ -142,16 +159,36 @@ class Tab(context: Context, private val host: Host) : BrowserClient.Listener {
         fun css(pageUrl: String): String = AdBlocker.cssFor(pageUrl)
     }
 
+    private inner class MediaBridge {
+        @JavascriptInterface
+        fun found(url: String, frameUrl: String?, infoJson: String?) {
+            val info = runCatching { JSONObject(infoJson ?: "{}") }.getOrElse { JSONObject() }
+            val gifLike = info.has("el") && MediaClassifier.isGifLike(
+                width = info.optInt("w"), height = info.optInt("h"),
+                loop = info.optBoolean("loop"), muted = info.optBoolean("muted"),
+                controls = info.optBoolean("controls"), durationSec = info.optDouble("dur", -1.0),
+            )
+            val cookies = runCatching { CookieManager.getInstance().getCookie(url) }.getOrNull()
+            detector.onPageMedia(url, frameUrl, client.pageUrl, client.pageTitle, userAgent, cookies, gifLike)
+        }
+    }
+
     // --- BrowserClient.Listener ---
 
     override fun injectCosmetics(view: WebView, url: String) {
         // Sin soporte de "document start" lo inyectamos en cuanto podemos (el script evita duplicados).
-        if (!documentStartScript && url.startsWith("http")) view.evaluateJavascript(COSMETIC_SCRIPT, null)
+        if (!documentStartScript && url.startsWith("http")) {
+            view.evaluateJavascript(COSMETIC_SCRIPT, null)
+            view.evaluateJavascript(PageScanner.SCRIPT, null)
+        }
     }
 
     override fun onPageStarted(url: String) {
         requestedUrl = url
         progress = 0
+        optionCache.clear()
+        options = emptyList()
+        optionsFor = emptyList()
         host.onTabUpdated(this)
     }
 

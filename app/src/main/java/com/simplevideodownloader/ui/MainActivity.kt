@@ -45,12 +45,15 @@ import com.simplevideodownloader.data.Site
 import com.simplevideodownloader.databinding.ActivityMainBinding
 import com.simplevideodownloader.databinding.SheetDetectedBinding
 import com.simplevideodownloader.detect.DetectedMedia
+import com.simplevideodownloader.detect.DownloadOption
 import com.simplevideodownloader.detect.MediaDetector
 import com.simplevideodownloader.detect.MediaKind
 import com.simplevideodownloader.detect.QualityResolver
 import com.simplevideodownloader.download.DownloadRequest
 import com.simplevideodownloader.download.Downloads
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -94,7 +97,7 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         setupBottomNav()
         setupBackNavigation()
         binding.fabDownload.setOnClickListener { onDownloadButton() }
-        updateDownloadButton(0)
+        updateDownloadButton(emptyList())
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -215,7 +218,22 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         detectorJob?.cancel()
         detectorJob = lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                tab.detector.items.collect { updateDownloadButton(it.size) }
+                // En cuanto aparece un vídeo se consultan sus resoluciones; el botón se pone rojo cuando hay alguna descargable.
+                tab.detector.items.collectLatest { items ->
+                    if (items.isEmpty()) {
+                        updateDownloadButton(emptyList())
+                        return@collectLatest
+                    }
+                    if (tab.optionsFor == items) {
+                        updateDownloadButton(tab.options)
+                        return@collectLatest
+                    }
+                    delay(400) // la página suele descubrir varios vídeos seguidos
+                    val options = QualityResolver.resolve(items, tab.title, tab.optionCache)
+                    tab.options = options
+                    tab.optionsFor = items
+                    updateDownloadButton(options)
+                }
             }
         }
         renderTab()
@@ -493,12 +511,13 @@ class MainActivity : AppCompatActivity(), Tab.Host {
 
     // --- Botón de descarga ---
 
-    /** Gris si aún no hay vídeos en la página; rojo con el número de vídeos cuando se detecta alguno. */
-    private fun updateDownloadButton(count: Int) {
+    /** Gris si aún no hay vídeos en la página; rojo, con la mejor resolución, cuando hay alguno descargable. */
+    private fun updateDownloadButton(options: List<DownloadOption>) {
         val fab = binding.fabDownload
-        if (count > 0) {
+        if (options.isNotEmpty()) {
             fab.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, R.color.accent))
-            fab.text = getString(R.string.fab_videos, count)
+            fab.text = options.firstNotNullOfOrNull { it.qualityLabel }?.let { getString(R.string.fab_videos, it) }
+                ?: getString(R.string.download)
             fab.extend()
         } else {
             fab.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, R.color.download_idle))
@@ -513,11 +532,11 @@ class MainActivity : AppCompatActivity(), Tab.Host {
             Toast.makeText(this, R.string.no_video_yet, Toast.LENGTH_LONG).show()
             return
         }
-        showQualitySheet(items)
+        showQualitySheet(items, current.options.takeIf { current.optionsFor == items })
     }
 
     /** Hoja inferior con cada resolución disponible y su tamaño en MB. */
-    private fun showQualitySheet(items: List<DetectedMedia>) {
+    private fun showQualitySheet(items: List<DetectedMedia>, ready: List<DownloadOption>?) {
         val tab = current
         val pageUrl = tab.client.pageUrl
         val sheetBinding = SheetDetectedBinding.inflate(layoutInflater)
@@ -526,7 +545,7 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         sheetBinding.list.adapter = adapter
 
         val job = lifecycleScope.launch {
-            val options = QualityResolver.resolve(items, tab.title)
+            val options = ready ?: QualityResolver.resolve(items, tab.title, tab.optionCache)
             sheetBinding.loading.isVisible = false
             adapter.submit(options)
             sheetBinding.sheetSubtitle.setText(

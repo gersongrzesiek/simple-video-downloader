@@ -48,4 +48,23 @@ class MediaClassifierTest {
         assertNull(MediaClassifier.heightFromUrl("https://cdn.x.com/v/12345678.mp4"))
         assertNull(MediaClassifier.heightFromUrl("https://cdn.x.com/v/1500px.jpg"))
     }
+
+    @Test
+    fun looksLikeAd() {
+        assertTrue(MediaClassifier.looksLikeAd("https://cdn.site.com/ads/preroll_15s.mp4"))
+        assertTrue(MediaClassifier.looksLikeAd("https://cdn.site.com/vast/creative.mp4"))
+        assertTrue(MediaClassifier.looksLikeAd("https://s0.2mdn.doubleclick.net/videoplayback/x.mp4"))
+        assertFalse(MediaClassifier.looksLikeAd("https://cdn.site.com/uploads/2024/video.mp4"))
+        assertFalse(MediaClassifier.looksLikeAd("https://cdn.site.com/headshot/clip_720p.mp4"))
+        assertFalse(MediaClassifier.looksLikeAd("https://ads.example.com/"))
+    }
+
+    @Test
+    fun isGifLike() {
+        assertTrue(MediaClassifier.isGifLike(300, 200, loop = true, muted = true, controls = false, durationSec = -1.0))
+        assertTrue(MediaClassifier.isGifLike(120, 90, loop = false, muted = false, controls = true, durationSec = 60.0))
+        assertTrue(MediaClassifier.isGifLike(0, 0, loop = false, muted = false, controls = true, durationSec = 3.0))
+        assertFalse(MediaClassifier.isGifLike(640, 360, loop = false, muted = false, controls = true, durationSec = 120.0))
+        assertFalse(MediaClassifier.isGifLike(0, 0, loop = false, muted = true, controls = false, durationSec = -1.0))
+    }
 }

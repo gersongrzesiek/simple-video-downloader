@@ -33,13 +33,29 @@ data class DownloadOption(
  */
 object QualityResolver {
     private fun heightFromUrl(url: String) = MediaClassifier.heightFromUrl(url)
+    private val audioFormats = setOf("AUDIO", "MP3", "M4A", "AAC", "OGG", "OGA", "OPUS", "WAV", "FLAC")
 
-    suspend fun resolve(items: List<DetectedMedia>, fallbackTitle: String?): List<DownloadOption> = withContext(Dispatchers.IO) {
+    /**
+     * [cache] guarda lo ya consultado de cada URL (por pestaña), para no repetir peticiones cada vez que
+     * la página descubre un vídeo nuevo.
+     */
+    suspend fun resolve(
+        items: List<DetectedMedia>,
+        fallbackTitle: String?,
+        cache: MutableMap<String, List<DownloadOption>> = java.util.concurrent.ConcurrentHashMap(),
+    ): List<DownloadOption> = withContext(Dispatchers.IO) {
         coroutineScope {
             items.filter { it.kind != MediaKind.DASH }
-                .map { media -> async { runCatching { optionsFor(media, fallbackTitle) }.getOrDefault(emptyList()) } }
+                .map { media ->
+                    async {
+                        cache[media.url] ?: runCatching { optionsFor(media, fallbackTitle) }.getOrDefault(emptyList())
+                            .also { cache[media.url] = it }
+                    }
+                }
                 .awaitAll()
                 .flatten()
+                // Gifs y clips de pocos KB disfrazados de vídeo.
+                .filterNot { it.format != "HLS" && it.format !in audioFormats && it.sizeBytes in 1 until MediaClassifier.MIN_VIDEO_BYTES }
                 .distinctBy { it.request.url }
                 .sortedWith(compareByDescending<DownloadOption> { it.height ?: 0 }.thenByDescending { it.sizeBytes })
         }
