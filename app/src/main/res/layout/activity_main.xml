@@ -4,7 +4,8 @@
     android:id="@+id/drawer"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fitsSystemWindows="true">
+    android:fitsSystemWindows="true"
+    app:statusBarBackground="@color/bar_background">
 
     <FrameLayout
         android:id="@+id/content_root"
@@ -20,7 +21,8 @@
             <com.google.android.material.appbar.MaterialToolbar
                 android:id="@+id/toolbar"
                 android:layout_width="match_parent"
-                android:layout_height="?attr/actionBarSize"
+                android:layout_height="64dp"
+                android:background="@color/bar_background"
                 app:contentInsetEnd="0dp"
                 app:contentInsetStart="0dp">
 
@@ -30,62 +32,67 @@
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
-                    <ImageButton
-                        android:id="@+id/home_button"
-                        android:layout_width="44dp"
-                        android:layout_height="44dp"
-                        android:layout_marginStart="4dp"
-                        android:background="?attr/selectableItemBackgroundBorderless"
-                        android:contentDescription="@string/home"
-                        android:src="@drawable/ic_home"
-                        app:tint="?attr/colorOnSurface" />
-
-                    <EditText
-                        android:id="@+id/url_input"
-                        android:layout_width="0dp"
-                        android:layout_height="40dp"
-                        android:layout_marginStart="4dp"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_url"
-                        android:hint="@string/url_hint"
-                        android:imeOptions="actionGo"
-                        android:importantForAutofill="no"
-                        android:inputType="textUri"
-                        android:paddingStart="14dp"
-                        android:paddingEnd="14dp"
-                        android:selectAllOnFocus="true"
-                        android:singleLine="true"
-                        android:textSize="15sp" />
-
-                    <TextView
-                        android:id="@+id/blocked_badge"
-                        android:layout_width="wrap_content"
-                        android:layout_height="32dp"
-                        android:layout_marginStart="6dp"
-                        android:background="@drawable/bg_badge"
-                        android:contentDescription="@string/blocked_badge_description"
-                        android:drawablePadding="3dp"
-                        android:gravity="center"
-                        android:minWidth="40dp"
-                        android:paddingStart="6dp"
-                        android:paddingEnd="8dp"
-                        android:textColor="?attr/colorOnSecondaryContainer"
-                        android:textSize="12sp"
-                        android:textStyle="bold"
-                        app:drawableStartCompat="@drawable/ic_shield" />
-
                     <TextView
                         android:id="@+id/tabs_button"
-                        android:layout_width="30dp"
-                        android:layout_height="30dp"
-                        android:layout_marginStart="10dp"
-                        android:layout_marginEnd="2dp"
+                        android:layout_width="28dp"
+                        android:layout_height="28dp"
+                        android:layout_marginStart="14dp"
+                        android:layout_marginEnd="10dp"
                         android:background="@drawable/bg_tabs_count"
                         android:contentDescription="@string/tabs"
                         android:gravity="center"
-                        android:textColor="?attr/colorOnSurface"
+                        android:textColor="@color/bar_icon"
                         android:textSize="13sp"
                         android:textStyle="bold" />
+
+                    <!-- Barra de direcciones con los botones integrados, como en Samsung Internet. -->
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="46dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_url"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <ImageButton
+                            android:id="@+id/home_button"
+                            android:layout_width="42dp"
+                            android:layout_height="42dp"
+                            android:layout_marginStart="2dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="@string/home"
+                            android:src="@drawable/ic_home"
+                            app:tint="@color/bar_icon" />
+
+                        <EditText
+                            android:id="@+id/url_input"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:layout_weight="1"
+                            android:background="@null"
+                            android:gravity="center"
+                            android:hint="@string/url_hint"
+                            android:imeOptions="actionGo"
+                            android:importantForAutofill="no"
+                            android:inputType="textUri"
+                            android:paddingStart="4dp"
+                            android:paddingEnd="4dp"
+                            android:selectAllOnFocus="true"
+                            android:singleLine="true"
+                            android:textColor="@color/bar_text"
+                            android:textColorHint="@color/bar_icon"
+                            android:textSize="16sp" />
+
+                        <ImageButton
+                            android:id="@+id/reload_button"
+                            android:layout_width="42dp"
+                            android:layout_height="42dp"
+                            android:layout_marginEnd="2dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="@string/reload"
+                            android:src="@drawable/ic_refresh"
+                            app:tint="@color/bar_icon" />
+                    </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.appbar.MaterialToolbar>
 
@@ -122,18 +129,19 @@
                         android:paddingEnd="12dp"
                         android:paddingBottom="96dp" />
 
-                    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+                    <com.google.android.material.floatingactionbutton.FloatingActionButton
                         android:id="@+id/fab_download"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="bottom|end"
-                        android:layout_margin="16dp"
+                        android:layout_margin="18dp"
                         android:contentDescription="@string/download"
-                        android:text="@string/download"
-                        android:textColor="@android:color/white"
+                        android:src="@drawable/ic_download"
                         app:backgroundTint="@color/download_idle"
-                        app:icon="@drawable/ic_download"
-                        app:iconTint="@android:color/white" />
+                        app:fabCustomSize="60dp"
+                        app:maxImageSize="30dp"
+                        app:shapeAppearanceOverlay="@style/ShapeAppearance.Circle"
+                        app:tint="@android:color/white" />
                 </FrameLayout>
 
                 <FrameLayout
@@ -148,6 +156,11 @@
                 android:id="@+id/bottom_nav"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:background="@color/bar_background"
+                app:itemActiveIndicatorStyle="@style/BottomNavIndicator"
+                app:itemIconSize="30dp"
+                app:itemIconTint="@color/bottom_nav_item"
+                app:itemTextColor="@color/bottom_nav_item"
                 app:labelVisibilityMode="labeled"
                 app:menu="@menu/bottom_nav" />
         </LinearLayout>

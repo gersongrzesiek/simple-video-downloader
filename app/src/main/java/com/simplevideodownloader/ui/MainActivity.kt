@@ -274,8 +274,7 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         binding.homeView.isVisible = tab.isHome
         binding.progress.isVisible = section == SECTION_TAB && !tab.isHome && tab.progress < 100
         if (binding.progress.isVisible) binding.progress.setProgressCompat(tab.progress, true)
-        binding.blockedBadge.isVisible = !tab.isHome
-        binding.blockedBadge.text = tab.blockedCount.toString()
+        binding.reloadButton.isVisible = !tab.isHome && tab.hasPage
         binding.tabsButton.text = tabs.size.toString()
 
         val pageUrl = tab.url
@@ -288,6 +287,8 @@ class MainActivity : AppCompatActivity(), Tab.Host {
             val host = pageUrl?.let { DomainUtils.hostOf(it) }
             isVisible = host != null && AdBlocker.isEnabled
             isChecked = host != null && !AdBlocker.isAllowlisted(host)
+            // El contador de anuncios bloqueados vive aquí, en el menú, en lugar de en la barra.
+            title = getString(R.string.block_here) + if (tab.blockedCount > 0) " (${tab.blockedCount})" else ""
         }
         binding.addFavoriteButton.isEnabled = pageUrl != null
         binding.addFavoriteButton.setText(if (favorite) R.string.remove_favorite_short else R.string.add_favorite_short)
@@ -332,9 +333,14 @@ class MainActivity : AppCompatActivity(), Tab.Host {
                 false
             }
         }
-        binding.blockedBadge.setOnClickListener {
-            Toast.makeText(this, getString(R.string.blocked_badge_description) + ": " + binding.blockedBadge.text, Toast.LENGTH_SHORT).show()
+        binding.reloadButton.setOnClickListener {
+            hideKeyboard()
+            if (current.hasPage) {
+                current.showPage()
+                current.webView.reload()
+            }
         }
+        binding.toolbar.overflowIcon?.setTint(ContextCompat.getColor(this, R.color.bar_icon))
     }
 
     private fun onMenuItem(id: Int): Boolean {
@@ -343,10 +349,6 @@ class MainActivity : AppCompatActivity(), Tab.Host {
             R.id.action_forward -> if (web.canGoForward()) {
                 current.showPage()
                 web.goForward()
-            }
-            R.id.action_reload -> if (current.hasPage) {
-                current.showPage()
-                web.reload()
             }
             R.id.action_new_tab -> {
                 newTab()
@@ -523,19 +525,13 @@ class MainActivity : AppCompatActivity(), Tab.Host {
 
     // --- Botón de descarga ---
 
-    /** Gris si aún no hay vídeos en la página; rojo, con la mejor resolución, cuando hay alguno descargable. */
+    /** Círculo gris si aún no hay vídeos en la página; rojo cuando hay alguno descargable. */
     private fun updateDownloadButton(options: List<DownloadOption>) {
         val fab = binding.fabDownload
-        if (options.isNotEmpty()) {
-            fab.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, R.color.accent))
-            fab.text = options.firstNotNullOfOrNull { it.qualityLabel }?.let { getString(R.string.fab_videos, it) }
-                ?: getString(R.string.download)
-            fab.extend()
-        } else {
-            fab.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, R.color.download_idle))
-            fab.text = getString(R.string.download)
-            fab.shrink()
-        }
+        val ready = options.isNotEmpty()
+        fab.backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(this, if (ready) R.color.accent else R.color.download_idle))
+        fab.contentDescription = options.firstNotNullOfOrNull { it.qualityLabel }?.let { getString(R.string.fab_videos, it) }
+            ?: getString(R.string.download)
     }
 
     private fun onDownloadButton() {
