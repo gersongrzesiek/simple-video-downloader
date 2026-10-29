@@ -13,6 +13,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.preference.PreferenceManager
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.simplevideodownloader.adblock.AdBlocker
@@ -160,7 +161,19 @@ class Tab(context: Context, private val host: Host) : BrowserClient.Listener {
         fun css(pageUrl: String): String = AdBlocker.cssFor(pageUrl)
     }
 
+    private val prefs = PreferenceManager.getDefaultSharedPreferences(context.applicationContext)
+
     private inner class MediaBridge {
+        /** El script pregunta si puede dar play sin sonido para descubrir calidades (nunca en iframes de anuncios). */
+        @JavascriptInterface
+        fun shouldAutoPlay(frameUrl: String?): Boolean {
+            if (!prefs.getBoolean(PREF_AUTOPLAY_DETECT, true)) return false
+            val page = client.pageUrl
+            if (MediaDetector.isUnsupportedSite(page) || MediaDetector.isUnsupportedSite(frameUrl)) return false
+            if (frameUrl == null || frameUrl == page) return true
+            return !MediaClassifier.looksLikeAd(frameUrl) && !AdBlocker.shouldBlock(frameUrl, page, ResourceType.SUBDOCUMENT)
+        }
+
         @JavascriptInterface
         fun found(url: String, frameUrl: String?, infoJson: String?) {
             val info = runCatching { JSONObject(infoJson ?: "{}") }.getOrElse { JSONObject() }
@@ -250,6 +263,7 @@ class Tab(context: Context, private val host: Host) : BrowserClient.Listener {
 
     companion object {
         private val nextId = AtomicLong()
+        const val PREF_AUTOPLAY_DETECT = "autoplay_detect"
 
         private val COSMETIC_SCRIPT = """
             (function(){

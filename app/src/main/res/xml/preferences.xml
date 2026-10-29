@@ -23,6 +23,13 @@
             app:key="adblock_allowlist_view"
             app:title="@string/pref_allowlist" />
     </PreferenceCategory>
+    <PreferenceCategory app:title="@string/pref_category_detection">
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="autoplay_detect"
+            app:summary="@string/pref_autoplay_detect_summary"
+            app:title="@string/pref_autoplay_detect" />
+    </PreferenceCategory>
     <PreferenceCategory app:title="@string/pref_category_about">
         <Preference
             app:key="about"

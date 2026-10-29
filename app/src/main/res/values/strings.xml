@@ -104,6 +104,9 @@
     <string name="pref_allowlist_summary_empty">Ninguno. Puedes permitir anuncios en un sitio desde el menú del navegador.</string>
     <string name="pref_allowlist_clear_title">¿Volver a bloquear en todos los sitios?</string>
     <string name="pref_allowlist_clear">Volver a bloquear</string>
+    <string name="pref_category_detection">Detección de vídeos</string>
+    <string name="pref_autoplay_detect">Reproducir en silencio para detectar</string>
+    <string name="pref_autoplay_detect_summary">Al abrir una página, da play sin sonido unos segundos al vídeo principal para descubrir sus calidades sin que tengas que tocarlo. Gasta algo más de datos.</string>
     <string name="pref_category_about">Acerca de</string>
     <string name="pref_about_summary">Versión %1$s. Sin anuncios ni rastreadores. Descarga solo contenido que tengas derecho a guardar.</string>
 </resources>

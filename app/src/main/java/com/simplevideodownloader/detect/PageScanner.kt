@@ -96,6 +96,68 @@ object PageScanner {
                 return p;
               };
             }
+            // Atributos con enlaces o configuración del reproductor (data-config, data-setup, enlaces de descarga...).
+            function scanAttributes() {
+              var all = document.getElementsByTagName('*');
+              for (var i = 0; i < all.length && i < 8000; i++) {
+                var at = all[i].attributes;
+                for (var j = 0; at && j < at.length; j++) {
+                  var v = at[j].value;
+                  if (v && v.length > 12 && v.length < 300000 && /^(data-|href|value|content|src)/i.test(at[j].name) && MEDIA_HINT.test(v)) {
+                    scanText(v.replace(/&quot;/g, '"'));
+                  }
+                }
+              }
+            }
+            // Reproductores conocidos que exponen su lista de fuentes (JW Player, Video.js).
+            function scanPlayers() {
+              try {
+                if (typeof window.jwplayer === 'function') {
+                  var pl = window.jwplayer().getPlaylist && window.jwplayer().getPlaylist();
+                  for (var i = 0; pl && i < pl.length; i++) {
+                    if (pl[i].file) report(pl[i].file, { player: 1 });
+                    var src = pl[i].sources || [];
+                    for (var j = 0; j < src.length; j++) report(src[j].file, { player: 1 });
+                  }
+                }
+              } catch (e) {}
+              try {
+                if (window.videojs && window.videojs.getPlayers) {
+                  var players = window.videojs.getPlayers();
+                  for (var k in players) {
+                    var p = players[k];
+                    var cur = p && p.currentSources ? p.currentSources() : [];
+                    for (var n = 0; n < cur.length; n++) report(cur[n].src, { player: 1 });
+                  }
+                }
+              } catch (e) {}
+            }
+            // Si está activado en Ajustes: da play sin sonido unos segundos al vídeo principal para que el
+            // reproductor pida sus calidades, y lo vuelve a dejar en pausa al principio.
+            var autoPlayed = false;
+            function autoPlay() {
+              if (autoPlayed) return;
+              try { if (!SVDMedia.shouldAutoPlay(location.href)) return; } catch (e) { return; }
+              var best = null, area = 0, list = document.querySelectorAll('video');
+              for (var i = 0; i < list.length; i++) {
+                var r = list[i].getBoundingClientRect();
+                if (r.width >= 200 && r.height >= 112 && r.width * r.height > area && list[i].paused) { best = list[i]; area = r.width * r.height; }
+              }
+              if (!best) return;
+              autoPlayed = true;
+              var wasMuted = best.muted;
+              best.muted = true;
+              var stop = function () {
+                setTimeout(function () {
+                  try { best.pause(); best.currentTime = 0; best.muted = wasMuted; } catch (e) {}
+                  schedule();
+                }, 3000);
+              };
+              try {
+                var p = best.play();
+                if (p && p.then) p.then(stop, function () { autoPlayed = false; }); else stop();
+              } catch (e) {}
+            }
             var timer = null, runs = 0;
             function scan() {
               timer = null;
@@ -103,8 +165,13 @@ object PageScanner {
               try { scanMedia(); scanMeta(); scanScripts(); } catch (e) {}
             }
             function schedule() { if (!timer) timer = setTimeout(scan, 700); }
-            document.addEventListener('DOMContentLoaded', schedule);
-            window.addEventListener('load', schedule);
+            function deepScan() { try { scanAttributes(); scanPlayers(); } catch (e) {} schedule(); }
+            document.addEventListener('DOMContentLoaded', deepScan);
+            window.addEventListener('load', function () {
+              deepScan();
+              setTimeout(deepScan, 2500);
+              setTimeout(autoPlay, 2000);
+            });
             // Cuando un vídeo carga sus datos sabemos su duración real: lo volvemos a mirar.
             document.addEventListener('loadedmetadata', function (e) {
               var t = e.target;
