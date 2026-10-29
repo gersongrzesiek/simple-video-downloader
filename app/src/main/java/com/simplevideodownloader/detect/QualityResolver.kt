@@ -1,5 +1,6 @@
 package com.simplevideodownloader.detect
 
+import android.media.MediaMetadataRetriever
 import com.simplevideodownloader.App
 import com.simplevideodownloader.download.DownloadRequest
 import com.simplevideodownloader.download.Downloads
@@ -12,7 +13,10 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import okhttp3.Response
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+import kotlin.math.min
 
 /** Una opción de descarga que se muestra al usuario: resolución, tamaño y formato. */
 data class DownloadOption(
@@ -24,6 +28,8 @@ data class DownloadOption(
     val sizeEstimated: Boolean,
     val format: String,
     val sourceHost: String?,
+    /** Duración en segundos, o 0 si no se sabe. */
+    val durationSec: Double = 0.0,
 ) {
     val qualityLabel: String? get() = height?.let { "${it}p" }
 }
@@ -75,9 +81,12 @@ object QualityResolver {
         }
         val best = compareBy<DownloadOption>({ it.sizeBytes > 0 && !it.sizeEstimated }, { it.sizeBytes })
         val byHeight = real.filter { it.height != null }.groupBy { it.height }.values.map { group -> group.maxWith(best) }
-        // Sin resolución conocida: solo si es lo único que hay o si es un archivo distinto (otro tamaño) a los ya listados.
+        // Sin resolución conocida: si es un archivo distinto (otro tamaño) a los ya listados. Las que tampoco
+        // tienen tamaño solo se muestran si no hay nada mejor.
+        val anySized = real.any { it.sizeBytes > 0 }
         val unknown = real.filter { it.height == null }.filter { o ->
-            byHeight.isEmpty() || (o.sizeBytes > 0 && byHeight.none { abs(it.sizeBytes - o.sizeBytes) < o.sizeBytes / 20 })
+            if (o.sizeBytes <= 0) byHeight.isEmpty() && !anySized
+            else byHeight.none { abs(it.sizeBytes - o.sizeBytes) < o.sizeBytes / 20 }
         }
         return (byHeight + unknown).sortedWith(compareByDescending<DownloadOption> { it.height ?: 0 }.thenByDescending { it.sizeBytes })
     }
@@ -91,7 +100,10 @@ object QualityResolver {
                 val size = if (media.sizeBytes > 0) media.sizeBytes else probeSize(media, media.url)
                 val ext = MediaClassifier.extensionOf(media.url).uppercase().takeIf { it.length in 2..4 }
                     ?: if (media.kind == MediaKind.AUDIO) "AUDIO" else "MP4"
-                val height = heightFromUrl(media.url)
+                // Si la URL no dice la resolución, se la preguntamos al propio archivo (lee solo la cabecera del vídeo).
+                val info = if (media.kind == MediaKind.VIDEO) heightFromUrl(media.url)?.let { VideoInfo(it, 0.0) } ?: readVideoInfo(media)
+                    else null
+                val height = info?.height
                 listOf(
                     DownloadOption(
                         request = DownloadRequest(
@@ -101,6 +113,7 @@ object QualityResolver {
                             mimeType = media.contentType,
                         ),
                         height = height, sizeBytes = size, sizeEstimated = false, format = ext, sourceHost = host,
+                        durationSec = info?.durationSec ?: 0.0,
                     )
                 )
             }
@@ -125,7 +138,7 @@ object QualityResolver {
                 playlist.variants.map { v ->
                     val height = v.resolution?.substringAfter('x')?.toIntOrNull() ?: heightFromUrl(v.url)
                     val size = if (v.bandwidth > 0 && duration > 0) (v.bandwidth / 8.0 * duration).toLong() else -1
-                    DownloadOption(request(v.url, height), height, size, true, "HLS", host)
+                    DownloadOption(request(v.url, height), height, size, true, "HLS", host, duration)
                 }
             }
             is HlsPlaylist.Media -> {
@@ -134,8 +147,41 @@ object QualityResolver {
                 val segmentSize = probeSize(media, first.url)
                 val size = if (segmentSize > 0) segmentSize * playlist.segments.size else -1
                 val height = heightFromUrl(media.url)
-                listOf(DownloadOption(request(media.url, height), height, size, true, "HLS", host))
+                listOf(DownloadOption(request(media.url, height), height, size, true, "HLS", host, playlist.durationSec))
             }
+        }
+    }
+
+    private class VideoInfo(val height: Int?, val durationSec: Double)
+
+    private val metadataExecutor = Executors.newCachedThreadPool()
+
+    /** Resolución y duración leídas del archivo con MediaMetadataRetriever (máximo 10 s, por si el servidor no responde). */
+    private fun readVideoInfo(media: DetectedMedia): VideoInfo? {
+        val task = metadataExecutor.submit<VideoInfo?> {
+            val retriever = MediaMetadataRetriever()
+            try {
+                val headers = HashMap<String, String>()
+                media.referer?.takeIf { it.startsWith("http") }?.let { headers["Referer"] = it }
+                media.userAgent?.let { headers["User-Agent"] = it }
+                media.cookies?.let { headers["Cookie"] = it }
+                retriever.setDataSource(media.url, headers)
+                val w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+                val h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+                val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()?.div(1000.0) ?: 0.0
+                // "720p" se refiere al lado corto, también en vídeos verticales.
+                VideoInfo(if (w > 0 && h > 0) min(w, h) else null, duration)
+            } catch (_: Exception) {
+                null
+            } finally {
+                runCatching { retriever.release() }
+            }
+        }
+        return try {
+            task.get(10, TimeUnit.SECONDS)
+        } catch (_: Exception) {
+            task.cancel(true)
+            null
         }
     }
 

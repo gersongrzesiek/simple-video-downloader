@@ -4,9 +4,12 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.text.format.DateUtils
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
@@ -15,6 +18,8 @@ import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
 import android.webkit.URLUtil
 import android.webkit.WebChromeClient
+import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
@@ -34,6 +39,8 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.simplevideodownloader.App
 import com.simplevideodownloader.R
 import com.simplevideodownloader.adblock.AdBlocker
 import com.simplevideodownloader.adblock.DomainUtils
@@ -51,12 +58,17 @@ import com.simplevideodownloader.detect.MediaKind
 import com.simplevideodownloader.detect.QualityResolver
 import com.simplevideodownloader.download.DownloadRequest
 import com.simplevideodownloader.download.Downloads
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.Request
 import org.json.JSONArray
+import org.json.JSONObject
+import org.json.JSONTokener
 
 class MainActivity : AppCompatActivity(), Tab.Host {
 
@@ -535,20 +547,43 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         showQualitySheet(items, current.options.takeIf { current.optionsFor == items })
     }
 
-    /** Hoja inferior con cada resolución disponible y su tamaño en MB. */
+    /** Hoja inferior: miniatura, título y duración del vídeo, y una tarjeta por resolución con su tamaño. */
     private fun showQualitySheet(items: List<DetectedMedia>, ready: List<DownloadOption>?) {
         val tab = current
         val pageUrl = tab.client.pageUrl
-        val sheetBinding = SheetDetectedBinding.inflate(layoutInflater)
-        val adapter = OptionsAdapter { option -> startDownload(option.request, pageUrl, option.qualityLabel) }
-        sheetBinding.list.layoutManager = LinearLayoutManager(this)
-        sheetBinding.list.adapter = adapter
+        val b = SheetDetectedBinding.inflate(layoutInflater)
+        var customName: String? = null
+        val adapter = QualityAdapter { }
+        b.list.layoutManager = GridLayoutManager(this, 3)
+        b.list.adapter = adapter
+        b.videoTitle.text = tab.title ?: tab.url
+        b.renameButton.isEnabled = false
+        b.downloadButton.isEnabled = false
+        b.closeButton.setOnClickListener { sheet?.dismiss() }
+        b.renameButton.setOnClickListener {
+            val option = adapter.selected ?: return@setOnClickListener
+            showRenameDialog(customName ?: option.request.fileName.substringBeforeLast('.')) { name ->
+                customName = name
+                b.videoTitle.text = name
+            }
+        }
+        b.downloadButton.setOnClickListener {
+            val option = adapter.selected ?: return@setOnClickListener
+            val request = customName?.let { name ->
+                option.request.copy(fileName = Downloads.suggestFileName(name, option.request.url, option.request.isHls, option.request.mimeType))
+            } ?: option.request
+            startDownload(request, pageUrl, option.qualityLabel)
+        }
+        loadSheetHeader(tab, b)
 
         val job = lifecycleScope.launch {
             val options = ready ?: QualityResolver.resolve(items, tab.title, tab.optionCache)
-            sheetBinding.loading.isVisible = false
+            b.loading.isVisible = false
             adapter.submit(options)
-            sheetBinding.sheetSubtitle.setText(
+            b.renameButton.isEnabled = options.isNotEmpty()
+            b.downloadButton.isEnabled = options.isNotEmpty()
+            options.maxOfOrNull { it.durationSec }?.takeIf { it > 0 && !b.duration.isVisible }?.let { showDuration(b, it) }
+            b.sheetSubtitle.setText(
                 when {
                     options.isNotEmpty() -> R.string.qualities_found
                     items.all { it.kind == MediaKind.DASH } -> R.string.download_unsupported_dash
@@ -557,7 +592,7 @@ class MainActivity : AppCompatActivity(), Tab.Host {
             )
         }
         sheet = BottomSheetDialog(this).apply {
-            setContentView(sheetBinding.root)
+            setContentView(b.root)
             behavior.state = BottomSheetBehavior.STATE_EXPANDED
             setOnDismissListener {
                 job.cancel()
@@ -565,6 +600,59 @@ class MainActivity : AppCompatActivity(), Tab.Host {
             }
             show()
         }
+    }
+
+    /** Miniatura (og:image o el póster del vídeo) y duración, leídas de la propia página. */
+    private fun loadSheetHeader(tab: Tab, b: SheetDetectedBinding) {
+        tab.webView.evaluateJavascript(SHEET_HEADER_SCRIPT) { result ->
+            val info = runCatching { JSONObject(JSONTokener(result).nextValue() as String) }.getOrNull() ?: return@evaluateJavascript
+            info.optDouble("dur", 0.0).takeIf { it > 0 }?.let { showDuration(b, it) }
+            val image = info.optString("img").takeIf { it.startsWith("http") } ?: return@evaluateJavascript
+            lifecycleScope.launch {
+                val bitmap = withContext(Dispatchers.IO) { downloadThumbnail(image, tab.client.pageUrl) }
+                if (bitmap != null) b.thumbnail.setImageBitmap(bitmap)
+            }
+        }
+    }
+
+    private fun showDuration(b: SheetDetectedBinding, seconds: Double) {
+        b.duration.text = DateUtils.formatElapsedTime(seconds.toLong())
+        b.duration.isVisible = true
+    }
+
+    private fun downloadThumbnail(url: String, referer: String?): Bitmap? = runCatching {
+        val request = Request.Builder().url(url).apply { referer?.let { header("Referer", it) } }.build()
+        App.http.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return null
+            val bytes = response.body!!.bytes()
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) >= 320) sample *= 2
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+        }
+    }.getOrNull()
+
+    private fun showRenameDialog(initial: String, onSave: (String) -> Unit) {
+        val input = EditText(this).apply {
+            setText(initial)
+            setSingleLine()
+            setSelectAllOnFocus(true)
+        }
+        val container = FrameLayout(this).apply {
+            val pad = (20 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad / 2, pad, 0)
+            addView(input)
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.rename_title)
+            .setView(container)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.save) { _, _ ->
+                input.text.toString().trim().takeIf { it.isNotEmpty() }?.let(onSave)
+            }
+            .show()
+        input.requestFocus()
     }
 
     override fun onDownloadRequested(tab: Tab, request: DownloadRequest) {
@@ -680,5 +768,11 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         private const val PREFS = "browser"
         private const val PREF_TABS = "tabs"
         private const val PREF_CURRENT_TAB = "current_tab"
+
+        private const val SHEET_HEADER_SCRIPT = "(function(){try{" +
+            "var m=document.querySelector('meta[property=\"og:image\"],meta[name=\"twitter:image\"]');" +
+            "var img=m?m.content:'',d=0,v=document.querySelectorAll('video');" +
+            "for(var i=0;i<v.length;i++){if(!img&&v[i].poster)img=v[i].poster;if(isFinite(v[i].duration)&&v[i].duration>d)d=v[i].duration;}" +
+            "return JSON.stringify({img:img?new URL(img,location.href).href:'',dur:d});}catch(e){return '{}';}})()"
     }
 }

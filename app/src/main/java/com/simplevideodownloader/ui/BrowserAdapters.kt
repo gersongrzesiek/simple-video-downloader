@@ -15,7 +15,7 @@ import com.simplevideodownloader.data.Site
 import com.simplevideodownloader.databinding.ItemHomeEmptyBinding
 import com.simplevideodownloader.databinding.ItemHomeHeaderBinding
 import com.simplevideodownloader.databinding.ItemHomeTileBinding
-import com.simplevideodownloader.databinding.ItemMediaBinding
+import com.simplevideodownloader.databinding.ItemQualityBinding
 import com.simplevideodownloader.databinding.ItemSiteBinding
 import com.simplevideodownloader.databinding.ItemTabBinding
 import com.simplevideodownloader.detect.DownloadOption
@@ -23,7 +23,8 @@ import java.util.Locale
 import kotlin.math.abs
 
 /** Tamaño en MB, como lo pidió el usuario ("12.3 MB"). */
-fun formatMegabytes(bytes: Long): String = String.format(Locale.getDefault(), "%.1f MB", bytes / 1_048_576.0)
+fun formatMegabytes(bytes: Long, decimals: Int = 1): String =
+    String.format(Locale.getDefault(), "%.${decimals}f MB", bytes / 1_048_576.0)
 
 private val tileColors = intArrayOf(
     0xFFE5383B.toInt(), 0xFF1E88E5.toInt(), 0xFF43A047.toInt(), 0xFF8E24AA.toInt(),
@@ -165,20 +166,25 @@ class SitesAdapter(
     }
 }
 
-/** Resoluciones disponibles para descargar, con su tamaño. */
-class OptionsAdapter(private val onClick: (DownloadOption) -> Unit) : RecyclerView.Adapter<OptionsAdapter.Holder>() {
+/** Resoluciones disponibles para descargar, en tarjetas: se elige una y luego se pulsa Descargar. */
+class QualityAdapter(private val onSelected: (DownloadOption) -> Unit) : RecyclerView.Adapter<QualityAdapter.Holder>() {
     private var options: List<DownloadOption> = emptyList()
+    private var selectedIndex = 0
+
+    val selected: DownloadOption? get() = options.getOrNull(selectedIndex)
 
     @SuppressLint("NotifyDataSetChanged")
     fun submit(newOptions: List<DownloadOption>) {
         options = newOptions
+        selectedIndex = 0
         notifyDataSetChanged()
+        selected?.let(onSelected)
     }
 
-    class Holder(val binding: ItemMediaBinding) : RecyclerView.ViewHolder(binding.root)
+    class Holder(val binding: ItemQualityBinding) : RecyclerView.ViewHolder(binding.root)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
-        Holder(ItemMediaBinding.inflate(LayoutInflater.from(parent.context), parent, false))
+        Holder(ItemQualityBinding.inflate(LayoutInflater.from(parent.context), parent, false))
 
     override fun getItemCount() = options.size
 
@@ -186,15 +192,19 @@ class OptionsAdapter(private val onClick: (DownloadOption) -> Unit) : RecyclerVi
         val option = options[position]
         val b = holder.binding
         val ctx = b.root.context
-        b.kind.text = option.format
-        b.title.text = option.qualityLabel ?: ctx.getString(R.string.quality_unknown)
-        val size = when {
+        b.quality.text = option.qualityLabel?.uppercase() ?: ctx.getString(R.string.quality_unknown_short)
+        b.size.text = when {
             option.sizeBytes <= 0 -> ctx.getString(R.string.size_unknown)
-            option.sizeEstimated -> "~" + formatMegabytes(option.sizeBytes)
-            else -> formatMegabytes(option.sizeBytes)
+            option.sizeEstimated -> "~" + formatMegabytes(option.sizeBytes, decimals = 2)
+            else -> formatMegabytes(option.sizeBytes, decimals = 2)
         }
-        b.subtitle.text = listOfNotNull(size, option.sourceHost).joinToString(" · ")
-        b.action.setOnClickListener { onClick(option) }
-        b.root.setOnClickListener { onClick(option) }
+        b.card.isChecked = position == selectedIndex
+        b.card.setOnClickListener {
+            val previous = selectedIndex
+            selectedIndex = holder.bindingAdapterPosition
+            notifyItemChanged(previous)
+            notifyItemChanged(selectedIndex)
+            selected?.let(onSelected)
+        }
     }
 }
