@@ -70,28 +70,36 @@ class MediaDetector {
 
     /**
      * Un vídeo encontrado leyendo la página (etiquetas `<video>`, metadatos o scripts), sin esperar a que
-     * se reproduzca. [frameUrl] es la página o iframe donde estaba.
+     * se reproduzca. [frameUrl] es la página o iframe donde estaba. [fromText] indica que la URL se sacó del
+     * texto de la página (scripts, JSON): esas solo se listan si el servidor la acepta, porque muchas webs
+     * escriben enlaces incompletos o caducados y montan el bueno al reproducir.
      */
-    fun onPageMedia(url: String, frameUrl: String?, pageUrl: String?, pageTitle: String?, userAgent: String?, cookies: String?, gifLike: Boolean) {
+    fun onPageMedia(
+        url: String, frameUrl: String?, pageUrl: String?, pageTitle: String?, userAgent: String?, cookies: String?,
+        gifLike: Boolean, fromText: Boolean,
+    ) {
         if (gifLike) {
             ignore(MediaClassifier.dedupeKey(url))
             return
         }
-        consider(url, pageUrl, pageTitle, frameUrl ?: pageUrl, userAgent, cookies, foundInPage = true)
+        consider(url, pageUrl, pageTitle, frameUrl ?: pageUrl, userAgent, cookies, foundInPage = true, mustVerify = fromText)
     }
 
-    private fun consider(url: String, pageUrl: String?, title: String?, referer: String?, ua: String?, cookies: String?, foundInPage: Boolean) {
+    private fun consider(
+        url: String, pageUrl: String?, title: String?, referer: String?, ua: String?, cookies: String?,
+        foundInPage: Boolean, mustVerify: Boolean = false,
+    ) {
         if (isUnsupportedSite(pageUrl) || isUnsupportedSite(url)) return
         if (isAd(url, referer, pageUrl)) return
         val key = MediaClassifier.dedupeKey(url)
         synchronized(lock) { if (key in ignored || byKey.containsKey(key)) return }
         val kind = MediaClassifier.classify(url)
         when {
-            kind == MediaKind.HLS || kind == MediaKind.DASH -> add(DetectedMedia(url, kind, pageUrl, title, referer, ua, cookies))
+            (kind == MediaKind.HLS || kind == MediaKind.DASH) && !mustVerify -> add(DetectedMedia(url, kind, pageUrl, title, referer, ua, cookies))
             // Los archivos directos se consultan antes de listarlos: así sabemos su tamaño y descartamos gifs y clips mínimos.
             (kind != null || foundInPage || MediaClassifier.shouldProbe(url)) && probed.add(key) -> {
                 val gen = generation
-                probeExecutor.execute { probe(gen, url, kind, pageUrl, title, referer, ua, cookies) }
+                probeExecutor.execute { probe(gen, url, kind, pageUrl, title, referer, ua, cookies, mustVerify) }
             }
         }
     }
@@ -105,7 +113,10 @@ class MediaDetector {
     }
 
     /** Pregunta al servidor el tipo y el tamaño de un medio (solo pide 1 byte). */
-    private fun probe(gen: Int, url: String, guess: MediaKind?, pageUrl: String?, title: String?, referer: String?, ua: String?, cookies: String?) {
+    private fun probe(
+        gen: Int, url: String, guess: MediaKind?, pageUrl: String?, title: String?, referer: String?, ua: String?, cookies: String?,
+        mustVerify: Boolean,
+    ) {
         val key = MediaClassifier.dedupeKey(url)
         try {
             val request = Request.Builder().url(url).header("Range", "bytes=0-0").apply {
@@ -117,7 +128,7 @@ class MediaDetector {
                 if (gen != generation) return
                 if (!response.isSuccessful) {
                     // Algunos servidores rechazan la consulta pero sirven el vídeo al reproductor: lo listamos igualmente.
-                    if (guess != null) add(DetectedMedia(url, guess, pageUrl, title, referer, ua, cookies))
+                    if (guess != null && !mustVerify) add(DetectedMedia(url, guess, pageUrl, title, referer, ua, cookies))
                     return
                 }
                 val type = response.header("Content-Type")
@@ -132,7 +143,7 @@ class MediaDetector {
                 add(DetectedMedia(url, kind, pageUrl, title, referer, ua, cookies, type, size))
             }
         } catch (_: Exception) {
-            if (gen == generation && guess != null) add(DetectedMedia(url, guess, pageUrl, title, referer, ua, cookies))
+            if (gen == generation && guess != null && !mustVerify) add(DetectedMedia(url, guess, pageUrl, title, referer, ua, cookies))
         }
     }
 

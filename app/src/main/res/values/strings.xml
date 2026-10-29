@@ -61,7 +61,7 @@
     <!-- Calidades -->
     <string name="reading_qualities">Consultando resoluciones y tamaños…</string>
     <string name="qualities_found">Elige la calidad y pulsa Descargar</string>
-    <string name="qualities_none">No se pudo leer ninguno de los vídeos de esta página.</string>
+    <string name="qualities_none">El servidor no acepta los enlaces encontrados hasta ahora. Dale a reproducir al vídeo y vuelve a pulsar Descargar.</string>
     <string name="no_video_yet">Todavía no se ha detectado ningún vídeo. Dale a reproducir y el botón se pondrá rojo.</string>
     <string name="quality_unknown">Calidad desconocida</string>
     <string name="quality_unknown_short">Original</string>

@@ -98,7 +98,14 @@ object QualityResolver {
         return when (media.kind) {
             MediaKind.HLS -> hlsOptions(media, title, host)
             else -> {
-                val size = if (media.sizeBytes > 0) media.sizeBytes else probeSize(media, media.url)
+                val size = if (media.sizeBytes > 0) media.sizeBytes else try {
+                    sizeOf(media, media.url)
+                } catch (e: HttpStatusException) {
+                    // 403, 404, 410...: el servidor no nos va a dar este archivo.
+                    if (e.code in 400..499 && e.code != 416) return emptyList() else -1L
+                } catch (_: Exception) {
+                    -1L
+                }
                 val ext = MediaClassifier.extensionOf(media.url).uppercase().takeIf { it.length in 2..4 }
                     ?: if (media.kind == MediaKind.AUDIO) "AUDIO" else "MP4"
                 // Si la URL no dice la resolución, se la preguntamos al propio archivo (lee solo la cabecera del vídeo).
@@ -131,11 +138,16 @@ object QualityResolver {
         return when (playlist) {
             is HlsPlaylist.Master -> {
                 if (playlist.variants.isEmpty()) return emptyList()
-                // Todas las calidades duran lo mismo: leemos la duración de una sola.
-                val duration = runCatching {
+                // Todas las calidades duran lo mismo: leemos la duración de una sola. Si el servidor rechaza
+                // la calidad, el enlace no sirve para descargar y no lo ofrecemos.
+                val duration = try {
                     val first = playlist.variants.first()
-                    fetch(media, first.url).use { (HlsParser.parse(it.body!!.string(), first.url) as HlsPlaylist.Media).durationSec }
-                }.getOrDefault(0.0)
+                    fetch(media, first.url).use { (HlsParser.parse(it.body!!.string(), first.url) as? HlsPlaylist.Media)?.durationSec ?: 0.0 }
+                } catch (e: HttpStatusException) {
+                    return emptyList()
+                } catch (_: Exception) {
+                    0.0
+                }
                 playlist.variants.map { v ->
                     val height = v.resolution?.substringAfter('x')?.toIntOrNull() ?: heightFromUrl(v.url)
                     val size = if (v.bandwidth > 0 && duration > 0) (v.bandwidth / 8.0 * duration).toLong() else -1
@@ -190,13 +202,14 @@ object QualityResolver {
         listOfNotNull(title?.takeIf { it.isNotBlank() }, height?.let { "${it}p" }).joinToString(" ").ifBlank { null }
 
     /** Tamaño total del recurso pidiendo solo 1 byte (cabecera Content-Range), o -1. */
-    private fun probeSize(media: DetectedMedia, url: String): Long = runCatching {
+    private fun probeSize(media: DetectedMedia, url: String): Long = runCatching { sizeOf(media, url) }.getOrDefault(-1L)
+
+    private fun sizeOf(media: DetectedMedia, url: String): Long =
         fetch(media, url, "bytes=0-0").use { response ->
             response.header("Content-Range")?.substringAfter('/')?.toLongOrNull()
                 ?: response.header("Content-Length")?.toLongOrNull()?.takeIf { response.code == 200 }
                 ?: -1L
         }
-    }.getOrDefault(-1L)
 
     private fun fetch(media: DetectedMedia, url: String, range: String? = null): Response {
         val request = Request.Builder().url(url).apply {
@@ -211,8 +224,10 @@ object QualityResolver {
         val response = App.http.newCall(request).execute()
         if (!response.isSuccessful) {
             response.close()
-            error("HTTP ${response.code}")
+            throw HttpStatusException(response.code)
         }
         return response
     }
+
+    private class HttpStatusException(val code: Int) : java.io.IOException("HTTP $code")
 }

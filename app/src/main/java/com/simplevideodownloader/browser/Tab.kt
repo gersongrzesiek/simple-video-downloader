@@ -170,7 +170,8 @@ class Tab(context: Context, private val host: Host) : BrowserClient.Listener {
                 controls = info.optBoolean("controls"), durationSec = info.optDouble("dur", -1.0),
             )
             val cookies = runCatching { CookieManager.getInstance().getCookie(url) }.getOrNull()
-            detector.onPageMedia(url, frameUrl, client.pageUrl, client.pageTitle, userAgent, cookies, gifLike)
+            val fromText = info.has("text") || info.has("meta")
+            detector.onPageMedia(url, frameUrl, client.pageUrl, client.pageTitle, userAgent, cookies, gifLike, fromText)
         }
     }
 
