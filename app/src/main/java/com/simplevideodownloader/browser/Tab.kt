@@ -52,6 +52,9 @@ class Tab(context: Context, private val host: Host) : BrowserClient.Listener {
     val client = BrowserClient(detector, this)
     val webView = WebView(context)
 
+    /** Color de la cabecera de la página, para teñir la barra superior (null = colores normales). */
+    var barColor: Int? = null
+
     /** True mientras se muestra la página de inicio en lugar de la web. */
     var isHome = true
     var progress = 100

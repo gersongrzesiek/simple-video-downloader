@@ -62,11 +62,14 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 }
             }
             recordId?.let { id ->
-                withContext(Dispatchers.IO) { Thumbnails.create(applicationContext, result, store.thumbnailFile(id)) }
+                val duration = withContext(Dispatchers.IO) {
+                    Thumbnails.create(applicationContext, result, store.thumbnailFile(id))
+                    Thumbnails.durationMs(applicationContext, result)
+                }
                 store.update(id) {
                     it.copy(
                         status = DownloadRecord.Status.DONE, uri = result.toString(), sizeBytes = bytesWritten,
-                        completedAt = System.currentTimeMillis(), error = null,
+                        completedAt = System.currentTimeMillis(), error = null, durationMs = duration,
                     )
                 }
             }

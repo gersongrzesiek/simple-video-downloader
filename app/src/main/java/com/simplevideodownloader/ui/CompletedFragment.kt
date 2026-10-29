@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -31,6 +30,7 @@ import com.simplevideodownloader.data.DownloadStore
 import com.simplevideodownloader.databinding.FragmentListBinding
 import com.simplevideodownloader.databinding.ItemCompletedBinding
 import com.simplevideodownloader.download.Downloads
+import com.simplevideodownloader.download.Thumbnails
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -79,6 +79,19 @@ class CompletedFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    /** Descargas anteriores a esta versión no guardaban la duración: la leemos del archivo una vez. */
+    private val durationChecked = HashSet<String>()
+
+    private fun fillDuration(record: DownloadRecord) {
+        val uri = record.uri?.let(Uri::parse) ?: return
+        if (!durationChecked.add(record.id)) return
+        val ctx = requireContext().applicationContext
+        viewLifecycleOwner.lifecycleScope.launch {
+            val duration = withContext(Dispatchers.IO) { Thumbnails.durationMs(ctx, uri) }
+            if (duration > 0) store.update(record.id) { it.copy(durationMs = duration) }
+        }
     }
 
     private fun fileExists(uri: Uri): Boolean =
@@ -208,7 +221,7 @@ class CompletedFragment : Fragment() {
         override fun onBindViewHolder(holder: Holder, position: Int) {
             val record = items[position]
             val b = holder.binding
-            b.title.text = record.request.fileName
+            b.title.text = displayName(record.request.fileName)
             b.details.text = listOfNotNull(
                 record.sizeBytes.takeIf { it > 0 }?.let { formatMegabytes(it) },
                 record.quality,
@@ -217,14 +230,10 @@ class CompletedFragment : Fragment() {
                 },
             ).joinToString(" · ")
 
-            // La miniatura se lee en segundo plano; el tag evita pintarla en una fila reciclada.
-            b.thumbnail.setImageDrawable(null)
-            b.thumbnail.tag = record.id
-            val file = store.thumbnail(record)
-            viewLifecycleOwner.lifecycleScope.launch {
-                val bitmap = withContext(Dispatchers.IO) { if (file.exists()) BitmapFactory.decodeFile(file.path) else null }
-                if (b.thumbnail.tag == record.id && bitmap != null) b.thumbnail.setImageBitmap(bitmap)
-            }
+            b.thumbnail.showThumbnail(store.thumbnail(record), viewLifecycleOwner.lifecycleScope)
+            b.duration.isVisible = record.durationMs > 0
+            b.duration.text = DateUtils.formatElapsedTime(record.durationMs / 1000)
+            if (record.durationMs <= 0) fillDuration(record)
 
             b.root.setOnClickListener { play(record) }
             b.more.setOnClickListener { showMenu(it, record) }

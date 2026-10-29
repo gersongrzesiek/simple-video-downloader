@@ -21,6 +21,8 @@ data class DownloadRecord(
     val sizeBytes: Long = -1,
     val completedAt: Long = 0,
     val error: String? = null,
+    /** Duración del vídeo terminado, en milisegundos (0 si no se sabe). */
+    val durationMs: Long = 0,
 ) {
     enum class Status { ACTIVE, DONE, FAILED }
 }
@@ -93,6 +95,7 @@ class DownloadStore private constructor(private val context: Context) {
                     sizeBytes = o.optLong("sizeBytes", -1),
                     completedAt = o.optLong("completedAt"),
                     error = o.optStringOrNull("error"),
+                    durationMs = o.optLong("durationMs"),
                 )
                 items[record.id] = record
             }
@@ -118,6 +121,7 @@ class DownloadStore private constructor(private val context: Context) {
                     .put("sizeBytes", rec.sizeBytes)
                     .put("completedAt", rec.completedAt)
                     .putOpt("error", rec.error)
+                    .put("durationMs", rec.durationMs)
             )
         }
         file.write(arr.toString())

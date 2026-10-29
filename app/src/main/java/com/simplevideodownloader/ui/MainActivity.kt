@@ -6,11 +6,15 @@ import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.text.format.DateUtils
 import android.view.KeyEvent
+import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -18,6 +22,7 @@ import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
 import android.webkit.URLUtil
 import android.webkit.WebChromeClient
+import android.webkit.WebView
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.PopupMenu
@@ -26,6 +31,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.ColorUtils
 import androidx.core.view.GravityCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -58,6 +64,7 @@ import com.simplevideodownloader.detect.MediaKind
 import com.simplevideodownloader.detect.QualityResolver
 import com.simplevideodownloader.download.DownloadRequest
 import com.simplevideodownloader.download.Downloads
+import com.simplevideodownloader.download.Thumbnails
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -279,17 +286,7 @@ class MainActivity : AppCompatActivity(), Tab.Host {
 
         val pageUrl = tab.url
         val favorite = browserStore.isFavorite(pageUrl)
-        binding.toolbar.menu.findItem(R.id.action_favorite)?.apply {
-            isVisible = pageUrl != null
-            isChecked = favorite
-        }
-        binding.toolbar.menu.findItem(R.id.action_block_here)?.apply {
-            val host = pageUrl?.let { DomainUtils.hostOf(it) }
-            isVisible = host != null && AdBlocker.isEnabled
-            isChecked = host != null && !AdBlocker.isAllowlisted(host)
-            // El contador de anuncios bloqueados vive aquí, en el menú, en lugar de en la barra.
-            title = getString(R.string.block_here) + if (tab.blockedCount > 0) " (${tab.blockedCount})" else ""
-        }
+        applyBarColor(if (tab.isHome || section != SECTION_TAB) null else tab.barColor)
         binding.addFavoriteButton.isEnabled = pageUrl != null
         binding.addFavoriteButton.setText(if (favorite) R.string.remove_favorite_short else R.string.add_favorite_short)
         tabsAdapter.submit(tabs, tab)
@@ -302,6 +299,9 @@ class MainActivity : AppCompatActivity(), Tab.Host {
 
     override fun onTabPageFinished(tab: Tab, url: String) {
         browserStore.recordVisit(url, tab.title)
+        // La cabecera puede pintarse un poco después de "terminar" la carga: miramos ahora y otra vez en un momento.
+        tab.webView.postDelayed({ if (tab.isHome.not()) sampleBarColor(tab) }, 300)
+        tab.webView.postDelayed({ if (tab.isHome.not()) sampleBarColor(tab) }, 1500)
     }
 
     override fun openInNewTab(url: String) {
@@ -311,8 +311,15 @@ class MainActivity : AppCompatActivity(), Tab.Host {
     // --- Barra superior ---
 
     private fun setupToolbar() {
-        binding.toolbar.inflateMenu(R.menu.main)
-        binding.toolbar.setOnMenuItemClickListener { item -> onMenuItem(item.itemId) }
+        binding.menuButton.setOnClickListener { anchor ->
+            hideKeyboard()
+            PopupMenu(this, anchor).apply {
+                inflate(R.menu.main)
+                prepareMenu(menu)
+                setOnMenuItemClickListener { item -> onMenuItem(item.itemId) }
+                show()
+            }
+        }
         binding.homeButton.setOnClickListener {
             hideKeyboard()
             current.showHome()
@@ -340,7 +347,124 @@ class MainActivity : AppCompatActivity(), Tab.Host {
                 current.webView.reload()
             }
         }
-        binding.toolbar.overflowIcon?.setTint(ContextCompat.getColor(this, R.color.bar_icon))
+    }
+
+    private fun prepareMenu(menu: Menu) {
+        val tab = current
+        val pageUrl = tab.url
+        menu.findItem(R.id.action_forward)?.isEnabled = tab.webView.canGoForward()
+        menu.findItem(R.id.action_favorite)?.apply {
+            isVisible = pageUrl != null
+            isChecked = browserStore.isFavorite(pageUrl)
+        }
+        menu.findItem(R.id.action_block_here)?.apply {
+            val host = pageUrl?.let { DomainUtils.hostOf(it) }
+            isVisible = host != null && AdBlocker.isEnabled
+            isChecked = host != null && !AdBlocker.isAllowlisted(host)
+            // El contador de anuncios bloqueados vive aquí, en el menú, en lugar de en la barra.
+            title = getString(R.string.block_here) + if (tab.blockedCount > 0) " (${tab.blockedCount})" else ""
+        }
+    }
+
+    // --- Color de la barra según la página ---
+
+    /** Lee el color de la cabecera de la página (lo que se ve arriba) y tiñe la barra con él, como Samsung Internet. */
+    private fun sampleBarColor(tab: Tab) {
+        val sampled = sampleTopColor(tab.webView)
+        if (sampled != null) {
+            setTabColor(tab, sampled)
+            return
+        }
+        // Si no se puede leer la imagen, usamos el color que declara la web (<meta name="theme-color">).
+        tab.webView.evaluateJavascript(THEME_COLOR_SCRIPT) { result ->
+            val text = runCatching { JSONTokener(result).nextValue() as? String }.getOrNull()
+            parseCssColor(text)?.let { setTabColor(tab, it) }
+        }
+    }
+
+    private fun setTabColor(tab: Tab, color: Int) {
+        tab.barColor = color
+        if (tab === current) renderTab()
+    }
+
+    /** Color más repetido en una franja fina de la parte superior de la web visible. */
+    private fun sampleTopColor(web: WebView): Int? {
+        if (web.width == 0 || web.height == 0 || web.scrollY > 0) return null
+        return runCatching {
+            val scale = 0.125f
+            val width = (web.width * scale).toInt().coerceAtLeast(1)
+            val bitmap = Bitmap.createBitmap(width, 3, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            canvas.scale(scale, scale)
+            canvas.translate(-web.scrollX.toFloat(), -(4f * resources.displayMetrics.density))
+            web.draw(canvas)
+            val counts = HashMap<Int, Int>()
+            for (x in 0 until width) for (y in 0 until 3) {
+                val c = bitmap.getPixel(x, y)
+                if (Color.alpha(c) < 200) continue
+                // Agrupamos tonos casi iguales (degradados, antialiasing del texto).
+                val key = Color.rgb(Color.red(c) and 0xF8, Color.green(c) and 0xF8, Color.blue(c) and 0xF8)
+                counts[key] = (counts[key] ?: 0) + 1
+            }
+            bitmap.recycle()
+            val best = counts.maxByOrNull { it.value } ?: return null
+            if (best.value < width) null else best.key
+        }.getOrNull()
+    }
+
+    private fun parseCssColor(text: String?): Int? {
+        val t = text?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: return null
+        Regex("rgba?\\(\\s*(\\d+)[ ,]+(\\d+)[ ,]+(\\d+)").find(t)?.let { m ->
+            val (r, g, b) = m.destructured
+            return Color.rgb(r.toInt().coerceIn(0, 255), g.toInt().coerceIn(0, 255), b.toInt().coerceIn(0, 255))
+        }
+        val hex = if (Regex("#[0-9a-f]{3}").matches(t)) "#" + t.drop(1).map { "$it$it" }.joinToString("") else t
+        return runCatching { Color.parseColor(hex) }.getOrNull()
+    }
+
+    private var barColorApplied = false
+    private var appliedBarColor: Int? = null
+
+    /** Pinta la barra superior y la de estado; iconos y texto en blanco o negro según lo oscuro del fondo. */
+    private fun applyBarColor(color: Int?) {
+        if (barColorApplied && color == appliedBarColor) return
+        barColorApplied = true
+        appliedBarColor = color
+        val background = color ?: ContextCompat.getColor(this, R.color.bar_background)
+        val dark = ColorUtils.calculateLuminance(background) < 0.5
+        val foreground = when {
+            color == null -> ContextCompat.getColor(this, R.color.bar_icon)
+            dark -> Color.WHITE
+            else -> 0xFF202124.toInt()
+        }
+        val textColor = if (color == null) ContextCompat.getColor(this, R.color.bar_text) else foreground
+        val field = when {
+            color == null -> ContextCompat.getColor(this, R.color.url_field)
+            dark -> 0x33FFFFFF
+            else -> 0x1A000000
+        }
+        val density = resources.displayMetrics.density
+        binding.toolbar.setBackgroundColor(background)
+        binding.drawer.setStatusBarBackgroundColor(background)
+        @Suppress("DEPRECATION")
+        window.statusBarColor = background
+        WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars =
+            if (color == null) resources.getBoolean(R.bool.light_bars) else !dark
+        binding.addressBar.background = GradientDrawable().apply {
+            cornerRadius = 12 * density
+            setColor(field)
+        }
+        val tint = ColorStateList.valueOf(foreground)
+        binding.homeButton.imageTintList = tint
+        binding.reloadButton.imageTintList = tint
+        binding.menuButton.imageTintList = tint
+        binding.tabsButton.setTextColor(foreground)
+        binding.tabsButton.background = GradientDrawable().apply {
+            cornerRadius = 6 * density
+            setStroke((2 * density).toInt(), foreground)
+        }
+        binding.urlInput.setTextColor(textColor)
+        binding.urlInput.setHintTextColor(ColorUtils.setAlphaComponent(foreground, 0xB0))
     }
 
     private fun onMenuItem(id: Int): Boolean {
@@ -503,6 +627,7 @@ class MainActivity : AppCompatActivity(), Tab.Host {
             if (::current.isInitialized) renderTab()
         } else {
             binding.progress.isVisible = false
+            applyBarColor(null)
         }
 
         val fm = supportFragmentManager
@@ -549,6 +674,10 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         val pageUrl = tab.client.pageUrl
         val b = SheetDetectedBinding.inflate(layoutInflater)
         var customName: String? = null
+        var pageThumbnail: Bitmap? = null
+        // Por defecto el vídeo se llama como la página, más la calidad elegida.
+        fun defaultName(option: DownloadOption) =
+            listOfNotNull(tab.title?.takeIf { it.isNotBlank() }, option.qualityLabel).joinToString(" ").ifBlank { null }
         val adapter = QualityAdapter { }
         b.list.layoutManager = GridLayoutManager(this, 3)
         b.list.adapter = adapter
@@ -558,19 +687,25 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         b.closeButton.setOnClickListener { sheet?.dismiss() }
         b.renameButton.setOnClickListener {
             val option = adapter.selected ?: return@setOnClickListener
-            showRenameDialog(customName ?: option.request.fileName.substringBeforeLast('.')) { name ->
+            showRenameDialog(customName ?: defaultName(option) ?: option.request.fileName.substringBeforeLast('.')) { name ->
                 customName = name
                 b.videoTitle.text = name
             }
         }
         b.downloadButton.setOnClickListener {
             val option = adapter.selected ?: return@setOnClickListener
-            val request = customName?.let { name ->
+            val request = (customName ?: defaultName(option))?.let { name ->
                 option.request.copy(fileName = Downloads.suggestFileName(name, option.request.url, option.request.isHls, option.request.mimeType))
             } ?: option.request
-            startDownload(request, pageUrl, option.qualityLabel)
+            val record = startDownload(request, pageUrl, option.qualityLabel)
+            // La miniatura de la página sirve mientras se descarga; al terminar se cambia por un fotograma del vídeo.
+            val image = pageThumbnail
+            if (record != null && image != null) {
+                val file = DownloadStore.get(this).thumbnailFile(record.id)
+                lifecycleScope.launch(Dispatchers.IO) { if (!file.exists()) Thumbnails.save(image, file) }
+            }
         }
-        loadSheetHeader(tab, b)
+        loadSheetHeader(tab, b) { pageThumbnail = it }
 
         val job = lifecycleScope.launch {
             val options = ready ?: QualityResolver.resolve(items, tab.title, tab.optionCache)
@@ -599,14 +734,17 @@ class MainActivity : AppCompatActivity(), Tab.Host {
     }
 
     /** Miniatura (og:image o el póster del vídeo) y duración, leídas de la propia página. */
-    private fun loadSheetHeader(tab: Tab, b: SheetDetectedBinding) {
+    private fun loadSheetHeader(tab: Tab, b: SheetDetectedBinding, onThumbnail: (Bitmap) -> Unit) {
         tab.webView.evaluateJavascript(SHEET_HEADER_SCRIPT) { result ->
             val info = runCatching { JSONObject(JSONTokener(result).nextValue() as String) }.getOrNull() ?: return@evaluateJavascript
             info.optDouble("dur", 0.0).takeIf { it > 0 }?.let { showDuration(b, it) }
             val image = info.optString("img").takeIf { it.startsWith("http") } ?: return@evaluateJavascript
             lifecycleScope.launch {
                 val bitmap = withContext(Dispatchers.IO) { downloadThumbnail(image, tab.client.pageUrl) }
-                if (bitmap != null) b.thumbnail.setImageBitmap(bitmap)
+                if (bitmap != null) {
+                    b.thumbnail.setImageBitmap(bitmap)
+                    onThumbnail(bitmap)
+                }
             }
         }
     }
@@ -655,26 +793,27 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         startDownload(request, tab.client.pageUrl, null)
     }
 
-    private fun startDownload(request: DownloadRequest, pageUrl: String?, quality: String?) {
+    private fun startDownload(request: DownloadRequest, pageUrl: String?, quality: String?): DownloadRecord? {
         if (MediaDetector.isUnsupportedSite(request.url) || MediaDetector.isUnsupportedSite(pageUrl)) {
             Toast.makeText(this, R.string.download_unsupported_site, Toast.LENGTH_LONG).show()
-            return
+            return null
         }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
         ) {
             pendingDownload = PendingDownload(request, pageUrl, quality)
             storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            return
+            return null
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        Downloads.enqueue(this, request, pageUrl, quality)
+        val record = Downloads.enqueue(this, request, pageUrl, quality)
         sheet?.dismiss()
-        Toast.makeText(this, getString(R.string.download_started, request.fileName), Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.download_started, displayName(request.fileName)), Toast.LENGTH_SHORT).show()
+        return record
     }
 
     // --- Pantalla completa y enlaces externos ---
@@ -764,6 +903,9 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         private const val PREFS = "browser"
         private const val PREF_TABS = "tabs"
         private const val PREF_CURRENT_TAB = "current_tab"
+
+        private const val THEME_COLOR_SCRIPT =
+            "(function(){var m=document.querySelector('meta[name=\"theme-color\"]');return m?m.content:'';})()"
 
         private const val SHEET_HEADER_SCRIPT = "(function(){try{" +
             "var m=document.querySelector('meta[property=\"og:image\"],meta[name=\"twitter:image\"]');" +

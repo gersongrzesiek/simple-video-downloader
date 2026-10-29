@@ -104,7 +104,8 @@ class ProgressFragment : Fragment() {
             val info = infos[record.id]
             val b = holder.binding
             val ctx = b.root.context
-            b.title.text = listOfNotNull(record.request.fileName, record.quality?.let { "($it)" }).joinToString(" ")
+            b.title.text = displayName(record.request.fileName)
+            b.thumbnail.showThumbnail(store.thumbnail(record), viewLifecycleOwner.lifecycleScope)
 
             if (record.status == DownloadRecord.Status.FAILED) {
                 b.progress.isVisible = false

@@ -18,6 +18,25 @@ object Thumbnails {
         }.getOrDefault(false)
     }
 
+    /** Duración en milisegundos del vídeo guardado, o 0. */
+    fun durationMs(context: Context, uri: Uri): Long {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(context, uri)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0
+        } catch (_: Exception) {
+            0
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    /** Guarda una imagen ya descargada (p. ej. la miniatura de la página) como miniatura provisional. */
+    fun save(bitmap: Bitmap, target: File): Boolean = runCatching {
+        target.outputStream().use { scale(bitmap).compress(Bitmap.CompressFormat.JPEG, 80, it) }
+        true
+    }.getOrDefault(false)
+
     private fun fromRetriever(context: Context, uri: Uri): Bitmap? {
         val retriever = MediaMetadataRetriever()
         return try {

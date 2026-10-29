@@ -32,27 +32,30 @@
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
-                    <TextView
-                        android:id="@+id/tabs_button"
-                        android:layout_width="28dp"
-                        android:layout_height="28dp"
-                        android:layout_marginStart="14dp"
-                        android:layout_marginEnd="10dp"
-                        android:background="@drawable/bg_tabs_count"
-                        android:contentDescription="@string/tabs"
-                        android:gravity="center"
-                        android:textColor="@color/bar_icon"
-                        android:textSize="13sp"
-                        android:textStyle="bold" />
-
-                    <!-- Barra de direcciones con los botones integrados, como en Samsung Internet. -->
+                    <!-- Barra de direcciones con todos los botones dentro, como en Samsung Internet. -->
                     <LinearLayout
+                        android:id="@+id/address_bar"
                         android:layout_width="0dp"
                         android:layout_height="46dp"
+                        android:layout_marginStart="10dp"
+                        android:layout_marginEnd="10dp"
                         android:layout_weight="1"
                         android:background="@drawable/bg_url"
                         android:gravity="center_vertical"
                         android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/tabs_button"
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:layout_marginStart="12dp"
+                            android:layout_marginEnd="4dp"
+                            android:background="@drawable/bg_tabs_count"
+                            android:contentDescription="@string/tabs"
+                            android:gravity="center"
+                            android:textColor="@color/bar_icon"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
 
                         <ImageButton
                             android:id="@+id/home_button"
@@ -87,10 +90,19 @@
                             android:id="@+id/reload_button"
                             android:layout_width="42dp"
                             android:layout_height="42dp"
-                            android:layout_marginEnd="2dp"
                             android:background="?attr/selectableItemBackgroundBorderless"
                             android:contentDescription="@string/reload"
                             android:src="@drawable/ic_refresh"
+                            app:tint="@color/bar_icon" />
+
+                        <ImageButton
+                            android:id="@+id/menu_button"
+                            android:layout_width="36dp"
+                            android:layout_height="42dp"
+                            android:layout_marginEnd="4dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="@string/more_options"
+                            android:src="@drawable/ic_more"
                             app:tint="@color/bar_icon" />
                     </LinearLayout>
                 </LinearLayout>
