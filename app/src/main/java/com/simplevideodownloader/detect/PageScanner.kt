@@ -17,10 +17,11 @@ object PageScanner {
             if (window.__svdScan || !window.SVDMedia || !/^https?:/.test(location.protocol)) return;
             window.__svdScan = true;
             var seen = {};
+            var MEDIA_HINT = /m3u8|mp4|webm|mpd/i;
             var TEXT_URL = /https?:(?:\\?\/){2}[^\s"'<>()]+?\.(?:m3u8|mp4|webm|mpd)(?:\?[^\s"'<>()]*)?(?=["'\s<>()]|\\)/gi;
             function report(u, info) {
               if (!u || typeof u !== 'string') return;
-              u = u.replace(/\\\//g, '/').replace(/&amp;/g, '&').trim();
+              u = u.replace(/\\\//g, '/').replace(/\\u0026/gi, '&').replace(/\\u002f/gi, '/').replace(/&amp;/g, '&').trim();
               if (/^(blob|data|javascript|about):/i.test(u)) return;
               try { u = new URL(u, location.href).href; } catch (e) { return; }
               if (!/^https?:/i.test(u)) return;
@@ -53,14 +54,47 @@ object PageScanner {
                 if (c && /^(https?:)?\/\//i.test(c) && !/\.(swf|html?|php)(\?|#|$)/i.test(c)) report(c, { meta: 1 });
               }
             }
+            function scanText(t) {
+              if (!t || typeof t !== 'string' || t.length > 3000000 || !MEDIA_HINT.test(t)) return;
+              // Las listas HLS las lee el detector de red; aquí solo interesan textos con enlaces (JSON, scripts).
+              if (t.lastIndexOf('#EXTM3U', 0) === 0) return;
+              var found = t.replace(/\\u002f/gi, '/').match(TEXT_URL);
+              if (found) for (var k = 0; k < found.length && k < 60; k++) report(found[k], { text: 1 });
+            }
             function scanScripts() {
               var list = document.querySelectorAll('script:not([src])');
-              for (var i = 0; i < list.length; i++) {
-                var t = list[i].textContent;
-                if (!t || t.length > 3000000) continue;
-                var found = t.match(TEXT_URL);
-                if (found) for (var k = 0; k < found.length && k < 30; k++) report(found[k], { text: 1 });
-              }
+              for (var i = 0; i < list.length; i++) scanText(list[i].textContent);
+            }
+            // Muchos reproductores piden la lista de calidades (JSON) al cargar: leemos esas respuestas.
+            try {
+              var send = XMLHttpRequest.prototype.send;
+              XMLHttpRequest.prototype.send = function () {
+                var x = this;
+                try {
+                  x.addEventListener('load', function () {
+                    try {
+                      if (x.responseType === '' || x.responseType === 'text') scanText(x.responseText);
+                      else if (x.responseType === 'json' && x.response) scanText(JSON.stringify(x.response));
+                    } catch (e) {}
+                  });
+                } catch (e) {}
+                return send.apply(this, arguments);
+              };
+            } catch (e) {}
+            if (window.fetch) {
+              var origFetch = window.fetch;
+              window.fetch = function () {
+                var p = origFetch.apply(this, arguments);
+                try {
+                  p.then(function (r) {
+                    try {
+                      var ct = (r.headers.get('content-type') || '').toLowerCase();
+                      if (/json|javascript|text\/plain|text\/html/.test(ct)) r.clone().text().then(scanText, function () {});
+                    } catch (e) {}
+                  }, function () {});
+                } catch (e) {}
+                return p;
+              };
             }
             var timer = null, runs = 0;
             function scan() {

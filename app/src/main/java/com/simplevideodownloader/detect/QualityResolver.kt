@@ -12,6 +12,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import okhttp3.Response
+import kotlin.math.abs
 
 /** Una opción de descarga que se muestra al usuario: resolución, tamaño y formato. */
 data class DownloadOption(
@@ -54,11 +55,31 @@ object QualityResolver {
                 }
                 .awaitAll()
                 .flatten()
-                // Gifs y clips de pocos KB disfrazados de vídeo.
-                .filterNot { it.format != "HLS" && it.format !in audioFormats && it.sizeBytes in 1 until MediaClassifier.MIN_VIDEO_BYTES }
                 .distinctBy { it.request.url }
-                .sortedWith(compareByDescending<DownloadOption> { it.height ?: 0 }.thenByDescending { it.sizeBytes })
+                .let(::tidy)
         }
+    }
+
+    /**
+     * Deja una opción por resolución. La página suele tener, además del vídeo, avances de otros vídeos
+     * (gifs, clips de segundos) y el mismo vídeo en MP4 y HLS: nos quedamos con el archivo más grande de
+     * cada altura y quitamos lo diminuto en comparación con el vídeo principal.
+     */
+    private fun tidy(options: List<DownloadOption>): List<DownloadOption> {
+        val largest = options.maxOfOrNull { it.sizeBytes } ?: return options
+        val real = options.filterNot { o ->
+            val isAudio = o.format in audioFormats
+            val tiny = !isAudio && o.sizeBytes in 1 until MediaClassifier.MIN_VIDEO_BYTES
+            val preview = !isAudio && largest > 0 && o.sizeBytes in 1 until largest / 30
+            tiny || preview
+        }
+        val best = compareBy<DownloadOption>({ it.sizeBytes > 0 && !it.sizeEstimated }, { it.sizeBytes })
+        val byHeight = real.filter { it.height != null }.groupBy { it.height }.values.map { group -> group.maxWith(best) }
+        // Sin resolución conocida: solo si es lo único que hay o si es un archivo distinto (otro tamaño) a los ya listados.
+        val unknown = real.filter { it.height == null }.filter { o ->
+            byHeight.isEmpty() || (o.sizeBytes > 0 && byHeight.none { abs(it.sizeBytes - o.sizeBytes) < o.sizeBytes / 20 })
+        }
+        return (byHeight + unknown).sortedWith(compareByDescending<DownloadOption> { it.height ?: 0 }.thenByDescending { it.sizeBytes })
     }
 
     private fun optionsFor(media: DetectedMedia, fallbackTitle: String?): List<DownloadOption> {
