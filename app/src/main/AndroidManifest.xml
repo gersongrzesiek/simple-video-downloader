@@ -49,8 +49,10 @@
         </activity>
 
         <activity
-            android:name=".ui.DownloadsActivity"
-            android:exported="false" />
+            android:name=".ui.PlayerActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:exported="false"
+            android:theme="@style/Theme.SimpleVideoDownloader.Player" />
         <activity
             android:name=".ui.SettingsActivity"
             android:exported="false" />

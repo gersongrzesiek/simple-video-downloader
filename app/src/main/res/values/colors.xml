@@ -3,4 +3,5 @@
     <color name="accent">#E5383B</color>
     <color name="accent_dark">#BA181B</color>
     <color name="launcher_background">#E5383B</color>
+    <color name="download_idle">#9E9E9E</color>
 </resources>

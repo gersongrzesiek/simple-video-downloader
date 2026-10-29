@@ -4,12 +4,13 @@ Navegador Android sencillo que detecta los vídeos de la página que estás vien
 
 ## Qué hace
 
-- **Navegador** con barra de búsqueda (DuckDuckGo), pantalla completa para vídeos y opción de abrir enlaces compartidos desde otras apps.
-- **Detector de vídeos**: vigila las peticiones de red de la página y lista los archivos `.mp4`, `.webm`, `.mp3`… y las listas HLS (`.m3u8`). Si una URL no tiene extensión clara, pregunta al servidor su tipo (pidiendo solo 1 byte). El botón rojo muestra cuántos vídeos encontró.
+- **Navegador con pestañas**: botón Inicio (favoritos y sitios más visitados), panel lateral con las pestañas abiertas y los favoritos, barra de búsqueda (DuckDuckGo), pantalla completa para vídeos y opción de abrir enlaces compartidos desde otras apps.
+- **Detector de vídeos**: vigila las peticiones de red de la página y lista los archivos `.mp4`, `.webm`, `.mp3`… y las listas HLS (`.m3u8`). Si una URL no tiene extensión clara, pregunta al servidor su tipo (pidiendo solo 1 byte). El botón de descarga está gris hasta que encuentra un vídeo y entonces se pone rojo; al tocarlo muestra cada resolución con su tamaño en MB (estimado en HLS).
 - **Descargas en segundo plano** con WorkManager y notificación de progreso:
   - Archivos directos.
   - HLS: elige calidad, baja los segmentos de 4 en 4, descifra AES-128 y los une en un `.ts` (o `.mp4` si el vídeo usa fMP4).
   - Se guardan en `Descargas/SimpleVideoDownloader` (MediaStore en Android 10+, sin permisos de almacenamiento).
+- **Barra inferior**: *Tab* (la página actual), *Progreso* (descargas en curso, cancelar o reintentar) y *Terminado* (vídeos descargados con miniatura y peso; se reproducen dentro de la app, se pueden borrar o abrir la página de origen, y si el archivo ya no está en el teléfono se vuelve a descargar).
 - **Bloqueador de anuncios**:
   - Bloquea peticiones de anuncios y rastreadores antes de que salgan del móvil.
   - Oculta los huecos que dejan los anuncios (reglas `##selector`), inyectando el CSS al principio de cada página.

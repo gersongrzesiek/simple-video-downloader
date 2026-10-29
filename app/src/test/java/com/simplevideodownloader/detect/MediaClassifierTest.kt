@@ -39,4 +39,13 @@ class MediaClassifierTest {
             MediaClassifier.dedupeKey("https://x.com/v.mp4?id=1&range=0-1000"),
         )
     }
+
+    @Test
+    fun heightFromUrl() {
+        assertEquals(720, MediaClassifier.heightFromUrl("https://cdn.x.com/v/clip_720p.mp4"))
+        assertEquals(1080, MediaClassifier.heightFromUrl("https://cdn.x.com/1920x1080/clip.mp4"))
+        assertEquals(480, MediaClassifier.heightFromUrl("https://cdn.x.com/v/480P/index.m3u8"))
+        assertNull(MediaClassifier.heightFromUrl("https://cdn.x.com/v/12345678.mp4"))
+        assertNull(MediaClassifier.heightFromUrl("https://cdn.x.com/v/1500px.jpg"))
+    }
 }

@@ -5,4 +5,8 @@
         <item name="colorPrimaryDark">@color/accent_dark</item>
         <item name="colorSecondary">@color/accent</item>
     </style>
+
+    <style name="Theme.SimpleVideoDownloader.Player" parent="Theme.SimpleVideoDownloader">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
 </resources>

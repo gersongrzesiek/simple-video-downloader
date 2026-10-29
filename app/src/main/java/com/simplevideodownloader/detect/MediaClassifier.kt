@@ -63,6 +63,17 @@ object MediaClassifier {
         return probeHints.any { lower.contains(it) }
     }
 
+    private val heightP = Regex("(?<![0-9])(\\d{3,4})[pP](?![a-zA-Z])")
+    private val dimensions = Regex("(?<![0-9])\\d{3,4}[xX](\\d{3,4})(?![0-9])")
+    private val validHeights = 120..4320
+
+    /** Altura deducida de la URL (p. ej. `video_720p.mp4` o `1280x720`), o null. */
+    fun heightFromUrl(url: String): Int? {
+        val path = url.substringBefore('#')
+        dimensions.findAll(path).lastOrNull()?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in validHeights }?.let { return it }
+        return heightP.findAll(path).lastOrNull()?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in validHeights }
+    }
+
     /** Clave para no listar dos veces el mismo vídeo pedido por rangos (`?range=`, `&bytes=`...). */
     fun dedupeKey(url: String): String {
         val noFragment = url.substringBefore('#')

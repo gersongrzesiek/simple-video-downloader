@@ -12,9 +12,28 @@
         android:paddingStart="20dp"
         android:paddingTop="20dp"
         android:paddingEnd="20dp"
-        android:paddingBottom="8dp"
-        android:text="@string/detected_title"
+        android:paddingBottom="4dp"
+        android:text="@string/choose_quality"
         android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+    <TextView
+        android:id="@+id/sheet_subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="8dp"
+        android:text="@string/reading_qualities"
+        android:textAppearance="?attr/textAppearanceBodySmall"
+        android:textColor="?android:attr/textColorSecondary" />
+
+    <com.google.android.material.progressindicator.LinearProgressIndicator
+        android:id="@+id/loading"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:indeterminate="true" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/list"

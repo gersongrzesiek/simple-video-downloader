@@ -35,6 +35,54 @@
     <string name="no_app_to_open">No hay ninguna app para abrir este archivo</string>
     <string name="storage_permission_needed">Hace falta permiso de almacenamiento para guardar el vídeo</string>
 
+    <!-- Pestañas, inicio y favoritos -->
+    <string name="tabs">Pestañas abiertas</string>
+    <string name="tabs_open">Pestañas</string>
+    <string name="new_tab">Nueva pestaña</string>
+    <string name="close_tab">Cerrar pestaña</string>
+    <string name="favorites">Favoritos</string>
+    <string name="add_favorite_short">Añadir</string>
+    <string name="remove_favorite_short">Quitar</string>
+    <string name="favorites_empty">Aún no tienes favoritos. Abre una página y toca «Añadir».</string>
+    <string name="favorite_page">Guardar en favoritos</string>
+    <string name="favorite_added">Añadido a favoritos</string>
+    <string name="favorite_removed">Quitado de favoritos</string>
+    <string name="home_favorites">Favoritos</string>
+    <string name="home_top_sites">Más visitados</string>
+    <string name="home_empty">Aquí verás tus favoritos y los sitios que más visitas.\nEscribe una dirección o lo que quieras buscar en la barra de arriba.</string>
+    <string name="remove">Quitar</string>
+    <string name="new_tab_title">Inicio</string>
+
+    <!-- Barra inferior -->
+    <string name="nav_tab">Tab</string>
+    <string name="nav_progress">Progreso</string>
+    <string name="nav_done">Terminado</string>
+
+    <!-- Calidades -->
+    <string name="reading_qualities">Consultando resoluciones y tamaños…</string>
+    <string name="qualities_found">Toca la calidad que quieras descargar</string>
+    <string name="qualities_none">No se pudo leer ninguno de los vídeos de esta página.</string>
+    <string name="no_video_yet">Todavía no se ha detectado ningún vídeo. Dale a reproducir y el botón se pondrá rojo.</string>
+    <string name="quality_unknown">Calidad desconocida</string>
+    <string name="size_unknown">tamaño desconocido</string>
+
+    <!-- Progreso y terminado -->
+    <string name="progress_empty">No hay descargas en curso.\nCuando descargues un vídeo verás aquí su progreso.</string>
+    <string name="done_empty">Aquí aparecerán los vídeos que descargues, listos para ver.</string>
+    <string name="more_options">Más opciones</string>
+    <string name="open_site">Ir al sitio web</string>
+    <string name="share">Compartir</string>
+    <string name="delete_file">Eliminar archivo</string>
+    <string name="remove_from_list">Quitar de la lista</string>
+    <string name="delete_confirm_title">¿Eliminar este vídeo?</string>
+    <string name="delete_confirm_message">Se borrará «%1$s» del teléfono.</string>
+    <string name="delete">Eliminar</string>
+    <string name="deleted">Vídeo eliminado</string>
+    <string name="delete_failed">No se pudo eliminar el archivo</string>
+    <string name="file_missing_redownload">El vídeo ya no está en el teléfono. Volviendo a descargarlo…</string>
+    <string name="no_source_site">No se sabe de qué página se descargó este vídeo</string>
+    <string name="player_error">No se pudo reproducir: %1$s</string>
+
     <!-- Ajustes -->
     <string name="pref_category_adblock">Bloqueador de anuncios</string>
     <string name="pref_adblock_enabled">Bloquear anuncios y rastreadores</string>

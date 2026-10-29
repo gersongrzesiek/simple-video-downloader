@@ -14,11 +14,13 @@ data class HlsVariant(val url: String, val bandwidth: Long, val resolution: Stri
 /** Clave de cifrado de un segmento (solo AES-128 está soportado). */
 data class HlsKey(val method: String, val uri: String?, val iv: ByteArray?)
 
-data class HlsSegment(val url: String, val sequence: Long, val key: HlsKey?, val byteRange: LongRange?)
+data class HlsSegment(val url: String, val sequence: Long, val key: HlsKey?, val byteRange: LongRange?, val durationSec: Double = 0.0)
 
 sealed interface HlsPlaylist {
     data class Master(val variants: List<HlsVariant>) : HlsPlaylist
     data class Media(val segments: List<HlsSegment>, val initSegment: HlsSegment?, val isLive: Boolean) : HlsPlaylist {
+        val durationSec: Double get() = segments.sumOf { it.durationSec }
+
         val isEncryptedUnsupported: Boolean
             get() = segments.any { it.key != null && it.key.method != "AES-128" && it.key.method != "NONE" }
     }
@@ -62,6 +64,7 @@ object HlsParser {
         var range: LongRange? = null
         var lastRangeEnd = 0L
         var ended = false
+        var duration = 0.0
         for (line in lines) {
             when {
                 line.startsWith("#EXT-X-MEDIA-SEQUENCE:") -> sequence = line.substringAfter(':').toLongOrNull() ?: 0
@@ -79,10 +82,12 @@ object HlsParser {
                     lastRangeEnd = range!!.last + 1
                 }
                 line.startsWith("#EXT-X-ENDLIST") -> ended = true
+                line.startsWith("#EXTINF:") -> duration = line.substringAfter(':').substringBefore(',').trim().toDoubleOrNull() ?: 0.0
                 line.startsWith("#") -> Unit
                 else -> {
-                    segments += HlsSegment(resolve(baseUrl, line), sequence++, key, range)
+                    segments += HlsSegment(resolve(baseUrl, line), sequence++, key, range, duration)
                     range = null
+                    duration = 0.0
                 }
             }
         }

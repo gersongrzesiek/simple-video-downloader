@@ -15,7 +15,10 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.simplevideodownloader.App
 import com.simplevideodownloader.R
-import com.simplevideodownloader.ui.DownloadsActivity
+import com.simplevideodownloader.data.DownloadRecord
+import com.simplevideodownloader.data.DownloadStore
+import com.simplevideodownloader.ui.MainActivity
+import com.simplevideodownloader.ui.PlayerActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -38,6 +41,9 @@ import javax.crypto.spec.SecretKeySpec
 class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     private val fileName = inputData.getString(KEY_NAME) ?: "video.mp4"
+    private val recordId = inputData.getString(KEY_RECORD)
+    private val store = DownloadStore.get(applicationContext)
+    private var bytesWritten = 0L
     private val notificationId = id.hashCode()
     private var lastProgressUpdate = 0L
 
@@ -54,14 +60,36 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                     downloadDirect(url, saver) { output = it }
                 }
             }
+            recordId?.let { id ->
+                withContext(Dispatchers.IO) { Thumbnails.create(applicationContext, result, store.thumbnailFile(id)) }
+                store.update(id) {
+                    it.copy(
+                        status = DownloadRecord.Status.DONE, uri = result.toString(), sizeBytes = bytesWritten,
+                        completedAt = System.currentTimeMillis(), error = null,
+                    )
+                }
+            }
             notifyFinished(result)
             Result.success(workDataOf(KEY_URI to result.toString(), KEY_NAME to fileName))
         } catch (e: Exception) {
             output?.let { saver.abort(it) }
-            if (isStopped) return Result.failure()
+            if (isStopped) {
+                markFailed(applicationContext.getString(R.string.status_cancelled))
+                return Result.failure()
+            }
             val retryable = e is IOException && runAttemptCount < 2
-            if (retryable) Result.retry() else Result.failure(workDataOf(KEY_ERROR to (e.message ?: e.javaClass.simpleName)))
+            if (retryable) {
+                Result.retry()
+            } else {
+                val message = e.message ?: e.javaClass.simpleName
+                markFailed(message)
+                Result.failure(workDataOf(KEY_ERROR to message))
+            }
         }
+    }
+
+    private fun markFailed(message: String) {
+        recordId?.let { id -> store.update(id) { it.copy(status = DownloadRecord.Status.FAILED, error = message) } }
     }
 
     // --- Descarga directa ---
@@ -81,6 +109,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                     if (read < 0) break
                     output.stream.write(buffer, 0, read)
                     done += read
+                    bytesWritten = done
                     reportProgress(done, total)
                 }
             }
@@ -109,7 +138,11 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val output = saver.create(name, mime).also(onOutput)
         val keys = HashMap<String, ByteArray>()
 
-        media.initSegment?.let { output.stream.write(fetchSegment(it, keys)) }
+        media.initSegment?.let { init ->
+            val bytes = fetchSegment(init, keys)
+            output.stream.write(bytes)
+            bytesWritten += bytes.size
+        }
 
         // Bajamos varios segmentos a la vez pero los escribimos en orden.
         val total = media.segments.size
@@ -119,6 +152,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             val parts = coroutineScope { window.map { seg -> async { fetchSegmentWithRetry(seg, keys) } }.map { it.await() } }
             for (part in parts) {
                 output.stream.write(part)
+                bytesWritten += part.size
                 written++
             }
             reportProgress(written.toLong(), total.toLong(), unit = "segmentos")
@@ -204,8 +238,9 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
     private fun notifyFinished(uri: Uri) {
         val ctx = applicationContext
-        val open = Intent(Intent.ACTION_VIEW).setDataAndType(uri, ctx.contentResolver.getType(uri) ?: "video/*")
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        val open = Intent(ctx, PlayerActivity::class.java).setData(uri)
+            .putExtra(PlayerActivity.EXTRA_TITLE, fileName)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val pending = PendingIntent.getActivity(ctx, notificationId, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val notification = NotificationCompat.Builder(ctx, App.DOWNLOAD_CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
@@ -218,11 +253,14 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
     }
 
     private fun openDownloadsIntent(): PendingIntent {
-        val intent = Intent(applicationContext, DownloadsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val intent = Intent(applicationContext, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_SECTION, MainActivity.SECTION_PROGRESS)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         return PendingIntent.getActivity(applicationContext, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
     companion object {
+        const val KEY_RECORD = "record"
         const val KEY_URL = "url"
         const val KEY_NAME = "name"
         const val KEY_HLS = "hls"

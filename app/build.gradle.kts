@@ -50,6 +50,10 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.preference:preference-ktx:1.2.1")
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
+    implementation("androidx.drawerlayout:drawerlayout:1.2.0")
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 

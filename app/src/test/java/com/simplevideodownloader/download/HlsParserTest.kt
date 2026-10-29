@@ -48,6 +48,7 @@ class HlsParserTest {
         assertEquals(16, media.segments[0].key!!.iv!!.size)
         assertEquals(null, media.segments[2].key)
         assertNotNull(media.initSegment)
+        assertEquals(16.0, media.durationSec, 0.001)
         assertFalse(media.isLive)
         assertFalse(media.isEncryptedUnsupported)
     }
