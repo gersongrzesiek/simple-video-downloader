@@ -19,6 +19,7 @@ import com.simplevideodownloader.data.DownloadRecord
 import com.simplevideodownloader.data.DownloadStore
 import com.simplevideodownloader.ui.MainActivity
 import com.simplevideodownloader.ui.PlayerActivity
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -99,9 +100,18 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
     // --- Descarga directa ---
 
     private suspend fun downloadDirect(url: String, saver: MediaStoreSaver, onOutput: (MediaStoreSaver.Output) -> Unit): Uri {
-        execute(url).use { response ->
+        // Pedimos con Range: si el servidor acepta trozos y dice el tamaño total, bajamos varios a la vez.
+        // Muchos servidores limitan la velocidad por conexión, así que varias conexiones suman más.
+        execute(url, "bytes=0-").use { response ->
             val body = response.body ?: throw IOException("Respuesta vacía")
             val mime = inputData.getString(KEY_MIME) ?: body.contentType()?.let { "${it.type}/${it.subtype}" } ?: "video/mp4"
+            val rangeTotal = if (response.code == 206) totalFromContentRange(response.header("Content-Range")) else -1L
+            if (rangeTotal >= MIN_PARALLEL_BYTES) {
+                response.close()
+                val output = saver.create(fileName, mime).also(onOutput)
+                downloadInParts(url, rangeTotal, output.stream)
+                return saver.finish(output, mime)
+            }
             val total = body.contentLength()
             val output = saver.create(fileName, mime).also(onOutput)
             val buffer = ByteArray(64 * 1024)
@@ -118,6 +128,64 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 }
             }
             return saver.finish(output, mime)
+        }
+    }
+
+    /** Baja el archivo en trozos de [CHUNK_BYTES] por varias conexiones y los escribe en orden. */
+    private suspend fun downloadInParts(url: String, total: Long, out: OutputStream) {
+        val ranges = (0 until total step CHUNK_BYTES).map { start -> start until minOf(start + CHUNK_BYTES, total) }
+        writeInOrder(ranges.size, PARALLEL_CONNECTIONS, fetch = { i -> fetchRangeWithRetry(url, ranges[i]) }) { bytes ->
+            out.write(bytes)
+            bytesWritten += bytes.size
+            reportProgress(bytesWritten, total)
+        }
+    }
+
+    private suspend fun fetchRangeWithRetry(url: String, range: LongRange): ByteArray {
+        var lastError: Exception? = null
+        repeat(3) {
+            currentCoroutineContext().ensureActive()
+            try {
+                val bytes = execute(url, "bytes=${range.first}-${range.last}").use { response ->
+                    if (response.code != 206) throw IOException("El servidor dejó de aceptar descargas por partes")
+                    response.body!!.bytes()
+                }
+                if (bytes.size.toLong() == range.last - range.first + 1) return bytes
+                lastError = IOException("Parte incompleta")
+            } catch (e: IOException) {
+                lastError = e
+            }
+        }
+        throw lastError ?: IOException("No se pudo descargar una parte")
+    }
+
+    private fun totalFromContentRange(header: String?): Long =
+        header?.substringAfterLast('/', "")?.trim()?.toLongOrNull() ?: -1L
+
+    /**
+     * Descarga [count] partes con hasta [parallel] a la vez y las entrega a [write] en orden. En cuanto se
+     * escribe la primera pendiente se pide la siguiente, así siempre hay [parallel] conexiones trabajando.
+     */
+    private suspend fun writeInOrder(
+        count: Int,
+        parallel: Int,
+        fetch: suspend (Int) -> ByteArray,
+        write: suspend (ByteArray) -> Unit,
+    ) = coroutineScope {
+        val pending = ArrayDeque<Deferred<ByteArray>>()
+        var next = 0
+        while (next < count && pending.size < parallel) {
+            val i = next++
+            pending.addLast(async(Dispatchers.IO) { fetch(i) })
+        }
+        while (pending.isNotEmpty()) {
+            val bytes = pending.removeFirst().await()
+            if (next < count) {
+                val i = next++
+                pending.addLast(async(Dispatchers.IO) { fetch(i) })
+            }
+            currentCoroutineContext().ensureActive()
+            write(bytes)
         }
     }
 
@@ -151,14 +219,10 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         // Bajamos varios segmentos a la vez pero los escribimos en orden.
         val total = media.segments.size
         var written = 0
-        for (window in media.segments.chunked(PARALLEL_SEGMENTS)) {
-            currentCoroutineContext().ensureActive()
-            val parts = coroutineScope { window.map { seg -> async { fetchSegmentWithRetry(seg, keys) } }.map { it.await() } }
-            for (part in parts) {
-                output.stream.write(part)
-                bytesWritten += part.size
-                written++
-            }
+        writeInOrder(total, PARALLEL_CONNECTIONS, fetch = { i -> fetchSegmentWithRetry(media.segments[i], keys) }) { part ->
+            output.stream.write(part)
+            bytesWritten += part.size
+            written++
             reportProgress(written.toLong(), total.toLong(), unit = "segmentos")
         }
         return saver.finish(output, mime)
@@ -284,6 +348,10 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         const val KEY_UNIT = "unit"
         const val KEY_URI = "uri"
         const val KEY_ERROR = "error"
-        private const val PARALLEL_SEGMENTS = 4
+        /** Conexiones simultáneas por descarga (trozos de un mp4 o segmentos HLS). */
+        private const val PARALLEL_CONNECTIONS = 6
+        private const val CHUNK_BYTES = 2L * 1024 * 1024
+        /** Por debajo de esto no compensa abrir varias conexiones. */
+        private const val MIN_PARALLEL_BYTES = 4L * 1024 * 1024
     }
 }
