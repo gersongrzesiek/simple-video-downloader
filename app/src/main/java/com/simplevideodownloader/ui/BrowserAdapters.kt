@@ -46,13 +46,16 @@ fun bindSiteIcon(letter: TextView, icon: ImageView, site: Site, scope: Coroutine
     icon.tag = site.url
     val cached = Favicons.cached(site.url)
     icon.setImageBitmap(cached)
+    // La inicial de color solo se ve mientras no hay icono; si no, asoma por detrás de los iconos transparentes.
     icon.isVisible = cached != null
+    letter.isVisible = cached == null
     if (cached != null) return
     scope.launch {
         val bitmap = Favicons.load(icon.context.applicationContext, site.url) ?: return@launch
         if (icon.tag == site.url) {
             icon.setImageBitmap(bitmap)
             icon.isVisible = true
+            letter.isVisible = false
         }
     }
 }
