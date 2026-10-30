@@ -2,7 +2,7 @@
 <resources>
     <color name="accent">#E5383B</color>
     <color name="accent_dark">#BA181B</color>
-    <color name="launcher_background">#E5383B</color>
+    <color name="launcher_background">#FF795D</color>
     <color name="download_idle">#9E9E9E</color>
     <!-- Barras superior e inferior (en values-night están las del modo oscuro). -->
     <color name="bar_background">#F4F4F7</color>
