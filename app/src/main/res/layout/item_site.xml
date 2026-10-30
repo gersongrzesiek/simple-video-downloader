@@ -27,9 +27,8 @@
             android:id="@+id/icon"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="@drawable/bg_favicon"
             android:contentDescription="@null"
-            android:padding="4dp"
+            android:padding="2dp"
             android:scaleType="fitCenter"
             android:visibility="gone" />
     </FrameLayout>

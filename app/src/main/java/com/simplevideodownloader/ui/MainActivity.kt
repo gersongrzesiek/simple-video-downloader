@@ -18,7 +18,9 @@ import android.text.format.DateUtils
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.Menu
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -127,6 +129,7 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         setupBottomNav()
         setupBackNavigation()
         binding.fabDownload.setOnClickListener { onDownloadButton() }
+        makeDownloadButtonMovable()
         updateDownloadButton(emptyList())
 
         lifecycleScope.launch {
@@ -151,6 +154,67 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         handleIntent(intent)
         askNotificationsOnce()
         savedInstanceState?.getInt(KEY_SECTION)?.let { openSection(it) }
+    }
+
+    /**
+     * El botón de descarga se puede arrastrar a cualquier parte de la página; un toque sin moverlo lo pulsa.
+     * La posición se recuerda entre sesiones.
+     */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private fun makeDownloadButtonMovable() {
+        val fab = binding.fabDownload
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val slop = ViewConfiguration.get(this).scaledTouchSlop
+        var downX = 0f
+        var downY = 0f
+        var startX = 0f
+        var startY = 0f
+        var dragging = false
+
+        fun clamp() {
+            val parent = fab.parent as? View ?: return
+            if (parent.width == 0) return
+            // Con traslación 0 el botón está abajo a la derecha: solo puede ir hacia arriba y a la izquierda.
+            fab.translationX = fab.translationX.coerceIn(-(fab.left.toFloat()), parent.width - fab.right.toFloat())
+            fab.translationY = fab.translationY.coerceIn(-(fab.top.toFloat()), parent.height - fab.bottom.toFloat())
+        }
+
+        fab.translationX = prefs.getFloat(PREF_FAB_X, 0f)
+        fab.translationY = prefs.getFloat(PREF_FAB_Y, 0f)
+        (fab.parent as View).addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> clamp() }
+
+        fab.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.rawX
+                    downY = event.rawY
+                    startX = v.translationX
+                    startY = v.translationY
+                    dragging = false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - downX
+                    val dy = event.rawY - downY
+                    if (!dragging && dx * dx + dy * dy > slop * slop) {
+                        dragging = true
+                        v.isPressed = false
+                        v.parent.requestDisallowInterceptTouchEvent(true)
+                    }
+                    if (dragging) {
+                        v.translationX = startX + dx
+                        v.translationY = startY + dy
+                        clamp()
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (dragging) {
+                    prefs.edit().putFloat(PREF_FAB_X, v.translationX).putFloat(PREF_FAB_Y, v.translationY).apply()
+                    dragging = false
+                    return@setOnTouchListener true
+                }
+            }
+            // Mientras se arrastra no llega nada al botón, así no cuenta como toque.
+            dragging
+        }
     }
 
     /** El permiso de notificaciones (Android 13+) se pide la primera vez que se abre la app. */
@@ -1062,6 +1126,8 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         private const val PREF_TABS = "tabs"
         private const val PREF_CURRENT_TAB = "current_tab"
         private const val PREF_ASKED_NOTIFICATIONS = "asked_notifications"
+        private const val PREF_FAB_X = "fab_x"
+        private const val PREF_FAB_Y = "fab_y"
         const val PREF_HOME_LIST = "home_list"
 
         private const val THEME_COLOR_SCRIPT =
