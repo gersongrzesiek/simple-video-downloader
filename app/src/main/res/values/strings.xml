@@ -7,6 +7,9 @@
     <string name="detected_title">Vídeos encontrados en esta página</string>
     <string name="download">Descargar</string>
     <string name="downloading">Descargando…</string>
+    <string name="downloaded_badge">Descargado</string>
+    <string name="downloading_badge">Descargando</string>
+    <string name="play">Reproducir</string>
     <string name="download_complete">Descarga completada. Toca para abrir.</string>
     <string name="download_started">Descarga iniciada: %1$s</string>
     <string name="download_unsupported_dash">Este vídeo usa DASH, que todavía no se puede descargar.</string>

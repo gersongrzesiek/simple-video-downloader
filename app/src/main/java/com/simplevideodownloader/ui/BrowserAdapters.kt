@@ -6,21 +6,30 @@ import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.BaseAdapter
+import android.widget.ImageView
 import android.widget.TextView
+import androidx.core.content.ContextCompat
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.color.MaterialColors
 import com.simplevideodownloader.R
 import com.simplevideodownloader.adblock.DomainUtils
 import com.simplevideodownloader.browser.Tab
+import com.simplevideodownloader.data.Favicons
 import com.simplevideodownloader.data.Site
 import com.simplevideodownloader.databinding.ItemHomeEmptyBinding
 import com.simplevideodownloader.databinding.ItemHomeHeaderBinding
 import com.simplevideodownloader.databinding.ItemHomeTileBinding
 import com.simplevideodownloader.databinding.ItemQualityBinding
 import com.simplevideodownloader.databinding.ItemSiteBinding
+import com.simplevideodownloader.databinding.ItemSuggestionBinding
 import com.simplevideodownloader.databinding.ItemTabBinding
 import com.simplevideodownloader.detect.DownloadOption
 import java.util.Locale
 import kotlin.math.abs
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 /** Tamaño en MB, como lo pidió el usuario ("12.3 MB"). */
 fun formatMegabytes(bytes: Long, decimals: Int = 1): String =
@@ -31,7 +40,24 @@ private val tileColors = intArrayOf(
     0xFFF4511E.toInt(), 0xFF00897B.toInt(), 0xFF3949AB.toInt(), 0xFF6D4C41.toInt(),
 )
 
-/** Círculo de color con la inicial del sitio (en lugar de descargar su icono). */
+/** Icono del sitio si lo tenemos (o se puede pedir); mientras tanto, círculo de color con su inicial. */
+fun bindSiteIcon(letter: TextView, icon: ImageView, site: Site, scope: CoroutineScope) {
+    bindSiteLetter(letter, site)
+    icon.tag = site.url
+    val cached = Favicons.cached(site.url)
+    icon.setImageBitmap(cached)
+    icon.isVisible = cached != null
+    if (cached != null) return
+    scope.launch {
+        val bitmap = Favicons.load(icon.context.applicationContext, site.url) ?: return@launch
+        if (icon.tag == site.url) {
+            icon.setImageBitmap(bitmap)
+            icon.isVisible = true
+        }
+    }
+}
+
+/** Círculo de color con la inicial del sitio. */
 fun bindSiteLetter(view: TextView, site: Site) {
     val host = DomainUtils.hostOf(site.url)?.removePrefix("www.") ?: site.title
     view.text = host.firstOrNull { it.isLetterOrDigit() }?.uppercase() ?: "?"
@@ -47,6 +73,7 @@ sealed class HomeItem {
 }
 
 class HomeAdapter(
+    private val scope: CoroutineScope,
     private val onOpen: (Site) -> Unit,
     private val onLongPress: (View, HomeItem.Tile) -> Unit,
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
@@ -87,7 +114,7 @@ class HomeAdapter(
             is HomeItem.Empty -> (holder as EmptyHolder).binding.text.text = item.text
             is HomeItem.Tile -> {
                 val b = (holder as TileHolder).binding
-                bindSiteLetter(b.letter, item.site)
+                bindSiteIcon(b.letter, b.icon, item.site, scope)
                 b.title.text = item.site.title.ifBlank { item.site.url }
                 b.root.setOnClickListener { onOpen(item.site) }
                 b.root.setOnLongClickListener {
@@ -135,6 +162,7 @@ class TabsAdapter(
 
 /** Lista de favoritos en el panel lateral. */
 class SitesAdapter(
+    private val scope: CoroutineScope,
     private val onOpen: (Site) -> Unit,
     private val onLongPress: (View, Site) -> Unit,
 ) : RecyclerView.Adapter<SitesAdapter.Holder>() {
@@ -156,7 +184,7 @@ class SitesAdapter(
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val site = sites[position]
         val b = holder.binding
-        bindSiteLetter(b.letter, site)
+        bindSiteIcon(b.letter, b.icon, site, scope)
         b.title.text = site.title.ifBlank { site.url }
         b.root.setOnClickListener { onOpen(site) }
         b.root.setOnLongClickListener {
@@ -167,9 +195,18 @@ class SitesAdapter(
 }
 
 /** Resoluciones disponibles para descargar, en tarjetas: se elige una y luego se pulsa Descargar. */
-class QualityAdapter(private val onSelected: (DownloadOption) -> Unit) : RecyclerView.Adapter<QualityAdapter.Holder>() {
+/** [onSelected] recibe la calidad elegida y si la tocó el usuario (false al llenar la lista). */
+class QualityAdapter(private val onSelected: (DownloadOption, Boolean) -> Unit) : RecyclerView.Adapter<QualityAdapter.Holder>() {
     private var options: List<DownloadOption> = emptyList()
     private var selectedIndex = 0
+    /** Calidades ya descargadas (o descargándose), con su texto: "Descargado" / "Descargando". */
+    private var badges: Map<DownloadOption, String> = emptyMap()
+
+    @SuppressLint("NotifyDataSetChanged")
+    fun setBadges(newBadges: Map<DownloadOption, String>) {
+        badges = newBadges
+        notifyDataSetChanged()
+    }
 
     val selected: DownloadOption? get() = options.getOrNull(selectedIndex)
 
@@ -178,7 +215,7 @@ class QualityAdapter(private val onSelected: (DownloadOption) -> Unit) : Recycle
         options = newOptions
         selectedIndex = 0
         notifyDataSetChanged()
-        selected?.let(onSelected)
+        selected?.let { onSelected(it, false) }
     }
 
     class Holder(val binding: ItemQualityBinding) : RecyclerView.ViewHolder(binding.root)
@@ -193,7 +230,13 @@ class QualityAdapter(private val onSelected: (DownloadOption) -> Unit) : Recycle
         val b = holder.binding
         val ctx = b.root.context
         b.quality.text = option.qualityLabel?.uppercase() ?: ctx.getString(R.string.quality_unknown_short)
+        val badge = badges[option]
+        b.size.setTextColor(
+            if (badge != null) ContextCompat.getColor(ctx, R.color.accent)
+            else MaterialColors.getColor(b.size, android.R.attr.textColorSecondary)
+        )
         b.size.text = when {
+            badge != null -> badge
             option.sizeBytes <= 0 -> ctx.getString(R.string.size_unknown)
             option.sizeEstimated -> "~" + formatMegabytes(option.sizeBytes, decimals = 2)
             else -> formatMegabytes(option.sizeBytes, decimals = 2)
@@ -204,7 +247,32 @@ class QualityAdapter(private val onSelected: (DownloadOption) -> Unit) : Recycle
             selectedIndex = holder.bindingAdapterPosition
             notifyItemChanged(previous)
             notifyItemChanged(selectedIndex)
-            selected?.let(onSelected)
+            selected?.let { onSelected(it, true) }
         }
     }
 }
+
+/** Sugerencias del historial bajo la barra de direcciones. */
+class SuggestionAdapter(private val scope: CoroutineScope) : BaseAdapter() {
+    private var sites: List<Site> = emptyList()
+
+    fun submit(newSites: List<Site>) {
+        sites = newSites
+        notifyDataSetChanged()
+    }
+
+    override fun getCount() = sites.size
+    override fun getItem(position: Int) = sites[position]
+    override fun getItemId(position: Int) = position.toLong()
+
+    override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+        val b = convertView?.let { ItemSuggestionBinding.bind(it) }
+            ?: ItemSuggestionBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        val site = sites[position]
+        bindSiteIcon(b.letter, b.icon, site, scope)
+        b.title.text = site.title.ifBlank { site.url }
+        b.url.text = site.url.removePrefix("https://").removePrefix("http://").removePrefix("www.").trimEnd('/')
+        return b.root
+    }
+}
+

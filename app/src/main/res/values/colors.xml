@@ -9,5 +9,6 @@
     <color name="url_field">#E4E4EA</color>
     <color name="bar_icon">#5F6368</color>
     <color name="bar_text">#1F1F1F</color>
-    <color name="nav_indicator">#26E5383B</color>
+    <color name="favicon_background">#FFFFFF</color>
+    <color name="favicon_stroke">#1F000000</color>
 </resources>

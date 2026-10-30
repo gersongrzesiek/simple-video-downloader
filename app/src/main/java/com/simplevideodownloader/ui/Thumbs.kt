@@ -1,7 +1,9 @@
 package com.simplevideodownloader.ui
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import android.util.LruCache
 import android.widget.ImageView
 import kotlinx.coroutines.CoroutineScope
@@ -31,3 +33,11 @@ fun ImageView.showThumbnail(file: File, scope: CoroutineScope) {
 
 /** Nombre para mostrar: el del archivo sin la extensión. */
 fun displayName(fileName: String) = fileName.substringBeforeLast('.').ifBlank { fileName }
+
+/** Si el vídeo descargado sigue en el teléfono (file:// o content://). Hace E/S: llamar fuera del hilo principal. */
+fun mediaExists(context: Context, uri: Uri): Boolean =
+    if (uri.scheme == "file") {
+        uri.path?.let { File(it).exists() } == true
+    } else {
+        runCatching { context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false }.getOrDefault(false)
+    }

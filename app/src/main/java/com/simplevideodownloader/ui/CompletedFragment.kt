@@ -94,12 +94,7 @@ class CompletedFragment : Fragment() {
         }
     }
 
-    private fun fileExists(uri: Uri): Boolean =
-        if (uri.scheme == "file") {
-            uri.path?.let { File(it).exists() } == true
-        } else {
-            runCatching { requireContext().contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false }.getOrDefault(false)
-        }
+    private fun fileExists(uri: Uri): Boolean = mediaExists(requireContext(), uri)
 
     /** Reproduce el vídeo; si ya no está en el teléfono, lo vuelve a descargar. */
     private fun play(record: DownloadRecord) {

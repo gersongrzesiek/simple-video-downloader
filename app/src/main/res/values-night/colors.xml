@@ -4,5 +4,6 @@
     <color name="url_field">#3A3A3C</color>
     <color name="bar_icon">#C4C7CC</color>
     <color name="bar_text">#F2F2F2</color>
-    <color name="nav_indicator">#40E5383B</color>
+    <color name="favicon_background">#2C2C2E</color>
+    <color name="favicon_stroke">#33FFFFFF</color>
 </resources>

@@ -12,7 +12,10 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.text.format.DateUtils
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.Menu
 import android.view.View
@@ -25,6 +28,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ListPopupWindow
 import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
@@ -93,6 +97,12 @@ class MainActivity : AppCompatActivity(), Tab.Host {
     private lateinit var homeAdapter: HomeAdapter
     private lateinit var tabsAdapter: TabsAdapter
     private lateinit var favoritesAdapter: SitesAdapter
+    private lateinit var suggestionAdapter: SuggestionAdapter
+    private var suggestions: ListPopupWindow? = null
+    /** True mientras la app escribe el autollenado en la barra, para no tomarlo como texto del usuario. */
+    private var completingAddress = false
+    /** Lo último que escribió el usuario (sin el autollenado), para saber si añadió letras o borró. */
+    private var typedAddress = ""
 
     private class PendingDownload(val request: DownloadRequest, val pageUrl: String?, val quality: String?)
 
@@ -347,6 +357,69 @@ class MainActivity : AppCompatActivity(), Tab.Host {
                 current.webView.reload()
             }
         }
+        setupAddressSuggestions()
+    }
+
+    /**
+     * Mientras se escribe en la barra: el texto va a la izquierda, se autocompleta el sitio más visitado
+     * que empieza igual y debajo aparecen sugerencias de favoritos e historial.
+     */
+    private fun setupAddressSuggestions() {
+        suggestionAdapter = SuggestionAdapter(lifecycleScope)
+        val popup = ListPopupWindow(this).apply {
+            anchorView = binding.addressBar
+            setAdapter(suggestionAdapter)
+            isModal = false
+            inputMethodMode = ListPopupWindow.INPUT_METHOD_NEEDED
+            setOnItemClickListener { _, _, position, _ ->
+                val site = suggestionAdapter.getItem(position)
+                hideKeyboard()
+                current.load(site.url)
+                current.webView.requestFocus()
+            }
+        }
+        suggestions = popup
+        binding.urlInput.setOnFocusChangeListener { _, hasFocus ->
+            binding.urlInput.gravity = if (hasFocus) Gravity.START or Gravity.CENTER_VERTICAL else Gravity.CENTER
+            typedAddress = ""
+            if (!hasFocus) popup.dismiss()
+        }
+        binding.urlInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+
+            override fun afterTextChanged(text: Editable) {
+                if (completingAddress || !binding.urlInput.hasFocus()) return
+                val typed = text.toString()
+                val added = typed.length > typedAddress.length
+                typedAddress = typed
+                // Solo se autocompleta al escribir al final; al borrar se respeta lo que queda.
+                if (added && binding.urlInput.selectionEnd == typed.length) {
+                    browserStore.completeHost(typed)?.let { host ->
+                        val bare = typed.lowercase().removePrefix("https://").removePrefix("http://").removePrefix("www.")
+                        val rest = host.substring(bare.length)
+                        completingAddress = true
+                        text.append(rest)
+                        binding.urlInput.setSelection(typed.length, typed.length + rest.length)
+                        completingAddress = false
+                    }
+                }
+                showSuggestions(typed)
+            }
+        })
+    }
+
+    private fun showSuggestions(typed: String) {
+        val popup = suggestions ?: return
+        val sites = browserStore.suggest(typed)
+        suggestionAdapter.submit(sites)
+        if (sites.isEmpty()) {
+            popup.dismiss()
+        } else if (!popup.isShowing) {
+            popup.width = binding.addressBar.width
+            popup.show()
+        }
     }
 
     private fun prepareMenu(menu: Menu) {
@@ -509,6 +582,7 @@ class MainActivity : AppCompatActivity(), Tab.Host {
     }
 
     private fun hideKeyboard() {
+        suggestions?.dismiss()
         getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(binding.urlInput.windowToken, 0)
         binding.urlInput.clearFocus()
     }
@@ -517,6 +591,7 @@ class MainActivity : AppCompatActivity(), Tab.Host {
 
     private fun setupHome() {
         homeAdapter = HomeAdapter(
+            scope = lifecycleScope,
             onOpen = { site -> current.load(site.url) },
             onLongPress = { view, tile ->
                 showRemoveMenu(view) {
@@ -545,6 +620,7 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         binding.tabsList.adapter = tabsAdapter
 
         favoritesAdapter = SitesAdapter(
+            scope = lifecycleScope,
             onOpen = { site ->
                 binding.drawer.closeDrawer(GravityCompat.START)
                 openUrl(site.url, newTab = false)
@@ -594,6 +670,8 @@ class MainActivity : AppCompatActivity(), Tab.Host {
     // --- Barra inferior: Tab, Progreso, Terminado ---
 
     private fun setupBottomNav() {
+        // La sección activa se marca solo con el color del icono y del texto, sin la pastilla de fondo.
+        binding.bottomNav.isItemActiveIndicatorEnabled = false
         binding.bottomNav.setOnItemSelectedListener { item ->
             showSection(
                 when (item.itemId) {
@@ -678,7 +756,25 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         // Por defecto el vídeo se llama como la página, más la calidad elegida.
         fun defaultName(option: DownloadOption) =
             listOfNotNull(tab.title?.takeIf { it.isNotBlank() }, option.qualityLabel).joinToString(" ").ifBlank { null }
-        val adapter = QualityAdapter { }
+        // Calidades de esta página que ya se descargaron (o se están descargando): no se descargan otra vez.
+        var existing: Map<DownloadOption, DownloadRecord> = emptyMap()
+        fun updateButtons(option: DownloadOption?) {
+            val record = option?.let { existing[it] }
+            b.downloadButton.setText(
+                when (record?.status) {
+                    DownloadRecord.Status.DONE -> R.string.play
+                    DownloadRecord.Status.ACTIVE -> R.string.downloading_badge
+                    else -> R.string.download
+                }
+            )
+            b.downloadButton.isEnabled = option != null && record?.status != DownloadRecord.Status.ACTIVE
+            b.renameButton.isEnabled = option != null && record == null
+        }
+        val adapter = QualityAdapter { option, byUser ->
+            val record = existing[option]
+            // Tocar una resolución ya descargada la reproduce directamente.
+            if (byUser && record?.status == DownloadRecord.Status.DONE) playDownloaded(record) else updateButtons(option)
+        }
         b.list.layoutManager = GridLayoutManager(this, 3)
         b.list.adapter = adapter
         b.videoTitle.text = tab.title ?: tab.url
@@ -694,6 +790,10 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         }
         b.downloadButton.setOnClickListener {
             val option = adapter.selected ?: return@setOnClickListener
+            existing[option]?.let { record ->
+                if (record.status == DownloadRecord.Status.DONE) playDownloaded(record)
+                return@setOnClickListener
+            }
             val request = (customName ?: defaultName(option))?.let { name ->
                 option.request.copy(fileName = Downloads.suggestFileName(name, option.request.url, option.request.isHls, option.request.mimeType))
             } ?: option.request
@@ -709,10 +809,15 @@ class MainActivity : AppCompatActivity(), Tab.Host {
 
         val job = lifecycleScope.launch {
             val options = ready ?: QualityResolver.resolve(items, tab.title, tab.optionCache)
+            existing = withContext(Dispatchers.IO) { findDownloaded(options, pageUrl) }
             b.loading.isVisible = false
             adapter.submit(options)
-            b.renameButton.isEnabled = options.isNotEmpty()
-            b.downloadButton.isEnabled = options.isNotEmpty()
+            adapter.setBadges(
+                existing.mapValues { (_, record) ->
+                    getString(if (record.status == DownloadRecord.Status.DONE) R.string.downloaded_badge else R.string.downloading_badge)
+                }
+            )
+            updateButtons(adapter.selected)
             options.maxOfOrNull { it.durationSec }?.takeIf { it > 0 && !b.duration.isVisible }?.let { showDuration(b, it) }
             b.sheetSubtitle.setText(
                 when {
@@ -731,6 +836,40 @@ class MainActivity : AppCompatActivity(), Tab.Host {
             }
             show()
         }
+    }
+
+    /**
+     * Descargas que corresponden a cada calidad de esta página: misma página y resolución, o mismo enlace.
+     * Las terminadas solo cuentan si el archivo sigue en el teléfono. Hace E/S.
+     */
+    private fun findDownloaded(options: List<DownloadOption>, pageUrl: String?): Map<DownloadOption, DownloadRecord> {
+        val page = pageUrl?.substringBefore('#')
+        val records = DownloadStore.get(this).records.value.filter { record ->
+            when (record.status) {
+                DownloadRecord.Status.ACTIVE -> true
+                DownloadRecord.Status.DONE -> record.uri?.let { mediaExists(this, Uri.parse(it)) } == true
+                else -> false
+            }
+        }
+        val found = LinkedHashMap<DownloadOption, DownloadRecord>()
+        for (option in options) {
+            val matches = records.filter { record ->
+                record.request.url == option.request.url ||
+                    (page != null && option.qualityLabel != null && record.quality == option.qualityLabel &&
+                        record.pageUrl?.substringBefore('#') == page)
+            }
+            (matches.lastOrNull { it.status == DownloadRecord.Status.DONE } ?: matches.lastOrNull())?.let { found[option] = it }
+        }
+        return found
+    }
+
+    private fun playDownloaded(record: DownloadRecord) {
+        val uri = record.uri?.let(Uri::parse) ?: return
+        sheet?.dismiss()
+        startActivity(
+            Intent(this, PlayerActivity::class.java).setData(uri)
+                .putExtra(PlayerActivity.EXTRA_TITLE, record.request.fileName)
+        )
     }
 
     /** Miniatura (og:image o el póster del vídeo) y duración, leídas de la propia página. */

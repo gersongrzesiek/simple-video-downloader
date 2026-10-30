@@ -19,6 +19,8 @@ class BrowserStore private constructor(context: Context) {
     private val file = JsonFile(File(context.filesDir, "browser.json"))
     private val favoritesList = ArrayList<Site>()
     private val visits = LinkedHashMap<String, Visit>()
+    /** Páginas visitadas (la más reciente primero), para sugerir mientras se escribe la dirección. */
+    private val history = ArrayList<Site>()
 
     private data class Visit(val host: String, var url: String, var title: String, var count: Int, var last: Long)
 
@@ -71,7 +73,44 @@ class BrowserStore private constructor(context: Context) {
             if (slash > 0) full.substring(0, slash + 1) else "$full/"
         }
         if (!title.isNullOrBlank() && visit.count <= 1) visit.title = title
+        history.removeAll { sameUrl(it.url, url) }
+        history.add(0, Site(url, title?.takeIf { it.isNotBlank() } ?: host))
+        if (history.size > MAX_HISTORY) history.subList(MAX_HISTORY, history.size).clear()
         save()
+    }
+
+    /**
+     * Dominio con el que completar lo escrito en la barra (el más visitado que empiece así), sin "www.".
+     * Ejemplo: "you" → "youtube.com". Null si no hay ninguno.
+     */
+    @Synchronized
+    fun completeHost(typed: String): String? {
+        val t = typed.lowercase().removePrefix("https://").removePrefix("http://").removePrefix("www.")
+        if (t.isEmpty() || t.contains('/') || t.contains(' ')) return null
+        return visits.values.sortedByDescending { it.count }.map { it.host }.firstOrNull { it.startsWith(t) && it != t }
+    }
+
+    /** Sugerencias para lo escrito: favoritos, sitios e historial cuya dirección o título lo contengan. */
+    @Synchronized
+    fun suggest(typed: String, limit: Int = 6): List<Site> {
+        val t = typed.trim().lowercase().removePrefix("https://").removePrefix("http://").removePrefix("www.")
+        if (t.isEmpty()) return emptyList()
+        fun bare(url: String) = url.lowercase().removePrefix("https://").removePrefix("http://").removePrefix("www.")
+        fun score(site: Site): Int {
+            val u = bare(site.url)
+            return when {
+                u.startsWith(t) -> 0
+                u.contains(t) -> 1
+                site.title.lowercase().contains(t) -> 2
+                else -> -1
+            }
+        }
+        val candidates = favoritesList + visits.values.sortedByDescending { it.count }.map { Site(it.url, it.title) } + history
+        return candidates.map { it to score(it) }.filter { it.second >= 0 }
+            .sortedBy { it.second }
+            .map { it.first }
+            .distinctBy { bare(it.url).trimEnd('/') }
+            .take(limit)
     }
 
     @Synchronized
@@ -92,6 +131,12 @@ class BrowserStore private constructor(context: Context) {
                     favoritesList += Site(o.getString("url"), o.optString("title"))
                 }
             }
+            json.optJSONArray("history")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    history += Site(o.getString("url"), o.optString("title"))
+                }
+            }
             json.optJSONArray("visits")?.let { arr ->
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
@@ -106,6 +151,9 @@ class BrowserStore private constructor(context: Context) {
         val json = JSONObject()
         json.put("favorites", JSONArray().apply {
             favoritesList.forEach { put(JSONObject().put("url", it.url).put("title", it.title)) }
+        })
+        json.put("history", JSONArray().apply {
+            history.forEach { put(JSONObject().put("url", it.url).put("title", it.title)) }
         })
         // Guardamos solo los 100 dominios más visitados.
         json.put("visits", JSONArray().apply {
@@ -127,6 +175,7 @@ class BrowserStore private constructor(context: Context) {
     }
 
     companion object {
+        private const val MAX_HISTORY = 300
         @Volatile private var instance: BrowserStore? = null
 
         fun get(context: Context): BrowserStore =

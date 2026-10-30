@@ -2,6 +2,7 @@ package com.simplevideodownloader.browser
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Message
 import android.view.View
@@ -18,6 +19,7 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.simplevideodownloader.adblock.AdBlocker
 import com.simplevideodownloader.adblock.ResourceType
+import com.simplevideodownloader.data.Favicons
 import com.simplevideodownloader.detect.DetectedMedia
 import com.simplevideodownloader.detect.DownloadOption
 import com.simplevideodownloader.detect.MediaClassifier
@@ -164,7 +166,8 @@ class Tab(context: Context, private val host: Host) : BrowserClient.Listener {
         fun css(pageUrl: String): String = AdBlocker.cssFor(pageUrl)
     }
 
-    private val prefs = PreferenceManager.getDefaultSharedPreferences(context.applicationContext)
+    private val appContext: Context = context.applicationContext
+    private val prefs = PreferenceManager.getDefaultSharedPreferences(appContext)
 
     private inner class MediaBridge {
         /** El script pregunta si puede dar play sin sonido para descubrir calidades (nunca en iframes de anuncios). */
@@ -232,6 +235,10 @@ class Tab(context: Context, private val host: Host) : BrowserClient.Listener {
         override fun onReceivedTitle(view: WebView, title: String?) {
             client.pageTitle = title
             host.onTabUpdated(this@Tab)
+        }
+
+        override fun onReceivedIcon(view: WebView, icon: Bitmap?) {
+            if (icon != null) Favicons.save(appContext, client.pageUrl, icon)
         }
 
         /** Ventanas emergentes: solo si el usuario tocó algo y el destino no es publicidad. Se abren en otra pestaña. */
