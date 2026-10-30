@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.os.Build
 import com.simplevideodownloader.adblock.AdBlocker
 import com.simplevideodownloader.adblock.FilterUpdateWorker
+import com.simplevideodownloader.lock.AppLock
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -15,6 +16,7 @@ class App : Application() {
         super.onCreate()
         instance = this
         createNotificationChannel()
+        AppLock.register(this)
         AdBlocker.init(this)
         FilterUpdateWorker.schedule(this)
     }

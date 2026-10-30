@@ -45,6 +45,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -148,7 +149,19 @@ class MainActivity : AppCompatActivity(), Tab.Host {
 
         restoreTabs()
         handleIntent(intent)
+        askNotificationsOnce()
         savedInstanceState?.getInt(KEY_SECTION)?.let { openSection(it) }
+    }
+
+    /** El permiso de notificaciones (Android 13+) se pide la primera vez que se abre la app. */
+    private fun askNotificationsOnce() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(PREF_ASKED_NOTIFICATIONS, false)) return
+        prefs.edit().putBoolean(PREF_ASKED_NOTIFICATIONS, true).apply()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -170,6 +183,7 @@ class MainActivity : AppCompatActivity(), Tab.Host {
 
     override fun onResume() {
         super.onResume()
+        applyHomeLayout()
         current.webView.onResume()
     }
 
@@ -365,7 +379,7 @@ class MainActivity : AppCompatActivity(), Tab.Host {
      * que empieza igual y debajo aparecen sugerencias de favoritos e historial.
      */
     private fun setupAddressSuggestions() {
-        suggestionAdapter = SuggestionAdapter(lifecycleScope)
+        suggestionAdapter = SuggestionAdapter()
         val popup = ListPopupWindow(this).apply {
             anchorView = binding.addressBar
             setAdapter(suggestionAdapter)
@@ -605,6 +619,16 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         }
         binding.homeView.layoutManager = grid
         binding.homeView.adapter = homeAdapter
+        applyHomeLayout()
+    }
+
+    /** Cuadrícula o lista en la página de inicio, según Ajustes. */
+    private fun applyHomeLayout() {
+        if (!::homeAdapter.isInitialized) return
+        val list = PreferenceManager.getDefaultSharedPreferences(this).getBoolean(PREF_HOME_LIST, false)
+        if (homeAdapter.listMode == list) return
+        (binding.homeView.layoutManager as? GridLayoutManager)?.spanSizeLookup?.invalidateSpanIndexCache()
+        homeAdapter.listMode = list
     }
 
     private fun setupDrawer() {
@@ -944,11 +968,6 @@ class MainActivity : AppCompatActivity(), Tab.Host {
             storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             return null
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
         val record = Downloads.enqueue(this, request, pageUrl, quality)
         sheet?.dismiss()
         Toast.makeText(this, getString(R.string.download_started, displayName(request.fileName)), Toast.LENGTH_SHORT).show()
@@ -1042,6 +1061,8 @@ class MainActivity : AppCompatActivity(), Tab.Host {
         private const val PREFS = "browser"
         private const val PREF_TABS = "tabs"
         private const val PREF_CURRENT_TAB = "current_tab"
+        private const val PREF_ASKED_NOTIFICATIONS = "asked_notifications"
+        const val PREF_HOME_LIST = "home_list"
 
         private const val THEME_COLOR_SCRIPT =
             "(function(){var m=document.querySelector('meta[name=\"theme-color\"]');return m?m.content:'';})()"

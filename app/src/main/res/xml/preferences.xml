@@ -30,6 +30,16 @@
             app:summary="@string/pref_autoplay_detect_summary"
             app:title="@string/pref_autoplay_detect" />
     </PreferenceCategory>
+    <PreferenceCategory app:title="@string/pref_category_app">
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="home_list"
+            app:summary="@string/pref_home_list_summary"
+            app:title="@string/pref_home_list" />
+        <Preference
+            app:key="app_pin"
+            app:title="@string/pref_pin" />
+    </PreferenceCategory>
     <PreferenceCategory app:title="@string/pref_category_about">
         <Preference
             app:key="about"

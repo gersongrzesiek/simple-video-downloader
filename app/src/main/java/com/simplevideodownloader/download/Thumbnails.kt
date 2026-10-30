@@ -10,6 +10,8 @@ import java.io.File
 
 /** Genera la miniatura de un vídeo descargado y la guarda como JPEG. */
 object Thumbnails {
+    private const val FRAME_AT_US = 30_000_000L
+
     fun create(context: Context, uri: Uri, target: File): Boolean {
         val bitmap = fromRetriever(context, uri) ?: fromMediaStore(context, uri) ?: return false
         return runCatching {
@@ -41,7 +43,11 @@ object Thumbnails {
         val retriever = MediaMetadataRetriever()
         return try {
             retriever.setDataSource(context, uri)
-            val frame = retriever.getFrameAtTime(2_000_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            // El segundo 30 suele ser más representativo que el principio (logos, negro, intros).
+            // Si el vídeo dura menos de 1:30, se toma su primer tercio.
+            val durationUs = (retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0) * 1000
+            val atUs = if (durationUs > 0) minOf(FRAME_AT_US, durationUs / 3) else FRAME_AT_US
+            val frame = retriever.getFrameAtTime(atUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 ?: retriever.frameAtTime
                 ?: return null
             scale(frame)

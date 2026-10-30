@@ -78,6 +78,14 @@ class HomeAdapter(
     private val onLongPress: (View, HomeItem.Tile) -> Unit,
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     private var items: List<HomeItem> = emptyList()
+    /** Sitios en filas (icono y nombre) en lugar de cuadrícula; se elige en Ajustes. */
+    var listMode = false
+        @SuppressLint("NotifyDataSetChanged")
+        set(value) {
+            if (field == value) return
+            field = value
+            notifyDataSetChanged()
+        }
 
     @SuppressLint("NotifyDataSetChanged")
     fun submit(newItems: List<HomeItem>) {
@@ -85,25 +93,27 @@ class HomeAdapter(
         notifyDataSetChanged()
     }
 
-    fun isFullWidth(position: Int) = items.getOrNull(position) !is HomeItem.Tile
+    fun isFullWidth(position: Int) = listMode || items.getOrNull(position) !is HomeItem.Tile
 
     override fun getItemCount() = items.size
 
     override fun getItemViewType(position: Int) = when (items[position]) {
         is HomeItem.Header -> 0
-        is HomeItem.Tile -> 1
+        is HomeItem.Tile -> if (listMode) 3 else 1
         is HomeItem.Empty -> 2
     }
 
     private class HeaderHolder(val binding: ItemHomeHeaderBinding) : RecyclerView.ViewHolder(binding.root)
     private class TileHolder(val binding: ItemHomeTileBinding) : RecyclerView.ViewHolder(binding.root)
     private class EmptyHolder(val binding: ItemHomeEmptyBinding) : RecyclerView.ViewHolder(binding.root)
+    private class RowHolder(val binding: ItemSiteBinding) : RecyclerView.ViewHolder(binding.root)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         val inflater = LayoutInflater.from(parent.context)
         return when (viewType) {
             0 -> HeaderHolder(ItemHomeHeaderBinding.inflate(inflater, parent, false))
             1 -> TileHolder(ItemHomeTileBinding.inflate(inflater, parent, false))
+            3 -> RowHolder(ItemSiteBinding.inflate(inflater, parent, false))
             else -> EmptyHolder(ItemHomeEmptyBinding.inflate(inflater, parent, false))
         }
     }
@@ -113,11 +123,19 @@ class HomeAdapter(
             is HomeItem.Header -> (holder as HeaderHolder).binding.header.text = item.text
             is HomeItem.Empty -> (holder as EmptyHolder).binding.text.text = item.text
             is HomeItem.Tile -> {
-                val b = (holder as TileHolder).binding
-                bindSiteIcon(b.letter, b.icon, item.site, scope)
-                b.title.text = item.site.title.ifBlank { item.site.url }
-                b.root.setOnClickListener { onOpen(item.site) }
-                b.root.setOnLongClickListener {
+                val root = if (holder is RowHolder) {
+                    val b = holder.binding
+                    bindSiteIcon(b.letter, b.icon, item.site, scope)
+                    b.title.text = item.site.title.ifBlank { item.site.url }
+                    b.root
+                } else {
+                    val b = (holder as TileHolder).binding
+                    bindSiteIcon(b.letter, b.icon, item.site, scope)
+                    b.title.text = item.site.title.ifBlank { item.site.url }
+                    b.root
+                }
+                root.setOnClickListener { onOpen(item.site) }
+                root.setOnLongClickListener {
                     onLongPress(it, item)
                     true
                 }
@@ -253,7 +271,7 @@ class QualityAdapter(private val onSelected: (DownloadOption, Boolean) -> Unit) 
 }
 
 /** Sugerencias del historial bajo la barra de direcciones. */
-class SuggestionAdapter(private val scope: CoroutineScope) : BaseAdapter() {
+class SuggestionAdapter : BaseAdapter() {
     private var sites: List<Site> = emptyList()
 
     fun submit(newSites: List<Site>) {
@@ -269,7 +287,6 @@ class SuggestionAdapter(private val scope: CoroutineScope) : BaseAdapter() {
         val b = convertView?.let { ItemSuggestionBinding.bind(it) }
             ?: ItemSuggestionBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         val site = sites[position]
-        bindSiteIcon(b.letter, b.icon, site, scope)
         b.title.text = site.title.ifBlank { site.url }
         b.url.text = site.url.removePrefix("https://").removePrefix("http://").removePrefix("www.").trimEnd('/')
         return b.root
