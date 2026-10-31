@@ -694,7 +694,7 @@ class MainActivity : AppCompatActivity(), Tab.Host {
     /** Cuadrícula o lista en la página de inicio, según Ajustes. */
     private fun applyHomeLayout() {
         if (!::homeAdapter.isInitialized) return
-        val list = PreferenceManager.getDefaultSharedPreferences(this).getBoolean(PREF_HOME_LIST, false)
+        val list = PreferenceManager.getDefaultSharedPreferences(this).getBoolean(PREF_HOME_LIST, true)
         if (homeAdapter.listMode == list) return
         (binding.homeView.layoutManager as? GridLayoutManager)?.spanSizeLookup?.invalidateSpanIndexCache()
         homeAdapter.listMode = list

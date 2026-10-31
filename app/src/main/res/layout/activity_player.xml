@@ -9,6 +9,7 @@
         android:id="@+id/player_view"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        app:animation_enabled="false"
         app:controller_layout_id="@layout/player_controls"
         app:show_buffering="when_playing" />
 

@@ -119,6 +119,7 @@ class PlayerActivity : AppCompatActivity() {
     private var gesture = Gesture.NONE
     private var startPosition = 0L
     private var seekTarget = -1L
+    /** Volumen fino de 0 a 100: el del sistema da el grueso y el del reproductor afina entre sus pasos. */
     private var startVolume = 0
     private var startBrightness = 0.5f
 
@@ -171,7 +172,7 @@ class PlayerActivity : AppCompatActivity() {
         val exo = player
         startPosition = exo?.currentPosition ?: 0L
         seekTarget = -1L
-        startVolume = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        startVolume = currentVolume()
         startBrightness = window.attributes.screenBrightness.takeIf { it >= 0 }
             ?: runCatching { Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f }.getOrDefault(0.5f)
         if (type != Gesture.SEEK) binding.playerView.hideController()
@@ -193,12 +194,23 @@ class PlayerActivity : AppCompatActivity() {
         )
     }
 
-    /** Deslizar toda la altura de la pantalla va del mínimo al máximo. */
+    private fun currentVolume(): Int {
+        val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        val system = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        return (system * 100f / max * (player?.volume ?: 1f)).roundToInt().coerceIn(0, 100)
+    }
+
+    /**
+     * Deslizar toda la altura de la pantalla va de 0 a 100, de uno en uno. El sistema solo tiene unos 15 pasos,
+     * así que se sube al paso necesario y el reproductor baja su propio volumen hasta el valor exacto.
+     */
     private fun updateVolume(dy: Float) {
-        val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val volume = (startVolume + dy / binding.playerView.height * max * 1.2f).roundToInt().coerceIn(0, max)
-        audio.setStreamVolume(AudioManager.STREAM_MUSIC, volume, 0)
-        showIndicator(getString(R.string.gesture_volume, volume * 100 / max.coerceAtLeast(1)))
+        val level = (startVolume + dy / binding.playerView.height * 100 * 1.2f).roundToInt().coerceIn(0, 100)
+        val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        val step = kotlin.math.ceil(level * max / 100f).toInt()
+        audio.setStreamVolume(AudioManager.STREAM_MUSIC, step, 0)
+        player?.volume = if (step == 0) 0f else (level / 100f) / (step.toFloat() / max)
+        showIndicator(getString(R.string.gesture_volume, level))
     }
 
     private fun updateBrightness(dy: Float) {

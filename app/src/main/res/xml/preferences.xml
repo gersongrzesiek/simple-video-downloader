@@ -32,7 +32,7 @@
     </PreferenceCategory>
     <PreferenceCategory app:title="@string/pref_category_app">
         <SwitchPreferenceCompat
-            app:defaultValue="false"
+            app:defaultValue="true"
             app:key="home_list"
             app:summary="@string/pref_home_list_summary"
             app:title="@string/pref_home_list" />

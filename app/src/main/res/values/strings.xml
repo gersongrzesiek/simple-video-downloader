@@ -28,7 +28,7 @@
     <string name="back">Atrás</string>
     <string name="rewind">Atrasar 10 segundos</string>
     <string name="fast_forward">Adelantar 10 segundos</string>
-    <string name="gesture_volume">Volumen %1$d %%</string>
+    <string name="gesture_volume">Volumen %1$d</string>
     <string name="gesture_brightness">Brillo %1$d %%</string>
     <string name="history">Historial</string>
     <string name="history_empty">Todavía no hay páginas en el historial</string>
