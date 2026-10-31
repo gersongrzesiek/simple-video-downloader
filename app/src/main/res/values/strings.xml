@@ -33,6 +33,17 @@
     <string name="history">Historial</string>
     <string name="history_empty">Todavía no hay páginas en el historial</string>
     <string name="history_clear">Borrar historial</string>
+    <string name="history_search">Buscar en el historial</string>
+    <string name="history_no_results">Ninguna página coincide con la búsqueda</string>
+    <string name="history_last_hour">Última hora</string>
+    <string name="history_today">Hoy</string>
+    <string name="history_yesterday">Ayer</string>
+    <string name="history_day_before">Anteayer</string>
+    <string name="history_older">Anteriores</string>
+    <string name="history_range_today_yesterday">Hoy y ayer</string>
+    <string name="history_range_week">Últimos 7 días</string>
+    <string name="history_range_month">Últimos 30 días</string>
+    <string name="history_range_all">Todo el historial</string>
     <string name="history_cleared">Historial borrado</string>
     <string name="pref_category_app">App</string>
     <string name="pref_home_list">Inicio en lista</string>

@@ -11,6 +11,11 @@ import java.io.File
 /** Un sitio guardado o visitado. */
 data class Site(val url: String, val title: String)
 
+/** Una visita del historial; [time] es 0 en las guardadas antes de que se registrara la hora. */
+data class HistoryEntry(val url: String, val title: String, val time: Long) {
+    val site: Site get() = Site(url, title)
+}
+
 /**
  * Favoritos y sitios más visitados. Se guardan en un JSON privado de la app.
  * Las visitas se cuentan por dominio, quedándonos con la última URL y título de cada uno.
@@ -19,8 +24,8 @@ class BrowserStore private constructor(context: Context) {
     private val file = JsonFile(File(context.filesDir, "browser.json"))
     private val favoritesList = ArrayList<Site>()
     private val visits = LinkedHashMap<String, Visit>()
-    /** Páginas visitadas (la más reciente primero), para sugerir mientras se escribe la dirección. */
-    private val history = ArrayList<Site>()
+    /** Visitas (la más reciente primero): para el Historial y las sugerencias de la barra. */
+    private val history = ArrayList<HistoryEntry>()
 
     private data class Visit(val host: String, var url: String, var title: String, var count: Int, var last: Long)
 
@@ -73,8 +78,9 @@ class BrowserStore private constructor(context: Context) {
             if (slash > 0) full.substring(0, slash + 1) else "$full/"
         }
         if (!title.isNullOrBlank() && visit.count <= 1) visit.title = title
-        history.removeAll { sameUrl(it.url, url) }
-        history.add(0, Site(url, title?.takeIf { it.isNotBlank() } ?: host))
+        // Recargar la misma página no crea otra entrada; volver a ella más tarde sí.
+        if (history.firstOrNull()?.let { sameUrl(it.url, url) } == true) history.removeAt(0)
+        history.add(0, HistoryEntry(url, title?.takeIf { it.isNotBlank() } ?: host, now))
         if (history.size > MAX_HISTORY) history.subList(MAX_HISTORY, history.size).clear()
         save()
     }
@@ -105,7 +111,8 @@ class BrowserStore private constructor(context: Context) {
                 else -> -1
             }
         }
-        val candidates = favoritesList + visits.values.sortedByDescending { it.count }.map { Site(it.url, it.title) } + history
+        val candidates = favoritesList + visits.values.sortedByDescending { it.count }.map { Site(it.url, it.title) } +
+            history.map { it.site }
         return candidates.map { it to score(it) }.filter { it.second >= 0 }
             .sortedBy { it.second }
             .map { it.first }
@@ -113,13 +120,20 @@ class BrowserStore private constructor(context: Context) {
             .take(limit)
     }
 
-    /** Páginas visitadas, la más reciente primero. */
+    /** Visitas, la más reciente primero. */
     @Synchronized
-    fun history(): List<Site> = history.toList()
+    fun history(): List<HistoryEntry> = history.toList()
+
+    /** Borra las visitas desde [since] (milisegundos); con 0 borra todo el historial. */
+    @Synchronized
+    fun clearHistory(since: Long = 0) {
+        if (since <= 0) history.clear() else history.removeAll { it.time >= since }
+        save()
+    }
 
     @Synchronized
-    fun clearHistory() {
-        history.clear()
+    fun removeHistory(entry: HistoryEntry) {
+        history.remove(entry)
         save()
     }
 
@@ -144,7 +158,7 @@ class BrowserStore private constructor(context: Context) {
             json.optJSONArray("history")?.let { arr ->
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
-                    history += Site(o.getString("url"), o.optString("title"))
+                    history += HistoryEntry(o.getString("url"), o.optString("title"), o.optLong("time"))
                 }
             }
             json.optJSONArray("visits")?.let { arr ->
@@ -163,7 +177,7 @@ class BrowserStore private constructor(context: Context) {
             favoritesList.forEach { put(JSONObject().put("url", it.url).put("title", it.title)) }
         })
         json.put("history", JSONArray().apply {
-            history.forEach { put(JSONObject().put("url", it.url).put("title", it.title)) }
+            history.forEach { put(JSONObject().put("url", it.url).put("title", it.title).put("time", it.time)) }
         })
         // Guardamos solo los 100 dominios más visitados.
         json.put("visits", JSONArray().apply {
@@ -185,7 +199,7 @@ class BrowserStore private constructor(context: Context) {
     }
 
     companion object {
-        private const val MAX_HISTORY = 300
+        private const val MAX_HISTORY = 1500
         @Volatile private var instance: BrowserStore? = null
 
         fun get(context: Context): BrowserStore =

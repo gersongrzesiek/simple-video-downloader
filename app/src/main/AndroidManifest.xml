@@ -57,6 +57,9 @@
             android:name=".ui.SettingsActivity"
             android:exported="false" />
         <activity
+            android:name=".ui.HistoryActivity"
+            android:exported="false" />
+        <activity
             android:name=".lock.LockActivity"
             android:excludeFromRecents="true"
             android:exported="false" />

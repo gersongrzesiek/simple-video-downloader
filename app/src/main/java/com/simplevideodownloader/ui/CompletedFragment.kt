@@ -8,9 +8,14 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.graphics.Typeface
 import android.text.Editable
+import android.text.SpannableString
+import android.text.Spanned
 import android.text.TextWatcher
 import android.text.format.DateUtils
+import android.text.style.StyleSpan
+import android.text.style.UnderlineSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -124,6 +129,31 @@ class CompletedFragment : Fragment() {
 
     private fun normalize(text: String) =
         java.text.Normalizer.normalize(text.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
+
+    /** El título con lo buscado subrayado (y en negrita), sin importar mayúsculas ni acentos. */
+    private fun highlighted(title: String): CharSequence {
+        if (query.isEmpty()) return title
+        val q = normalize(query)
+        // Normalizamos letra por letra para poder volver a las posiciones del título original.
+        val norm = StringBuilder()
+        val origin = ArrayList<Int>()
+        title.forEachIndexed { i, c ->
+            normalize(c.toString()).forEach { n ->
+                norm.append(n)
+                origin += i
+            }
+        }
+        val text = SpannableString(title)
+        var from = norm.indexOf(q)
+        while (from >= 0 && q.isNotEmpty()) {
+            val start = origin[from]
+            val end = origin[from + q.length - 1] + 1
+            text.setSpan(UnderlineSpan(), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            text.setSpan(StyleSpan(Typeface.BOLD), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            from = norm.indexOf(q, from + q.length)
+        }
+        return text
+    }
 
     private fun render() {
         val b = _binding ?: return
@@ -300,7 +330,7 @@ class CompletedFragment : Fragment() {
         override fun onBindViewHolder(holder: Holder, position: Int) {
             val record = items[position]
             val b = holder.binding
-            b.title.text = displayName(record.request.fileName)
+            b.title.text = highlighted(displayName(record.request.fileName))
             b.details.text = listOfNotNull(
                 record.sizeBytes.takeIf { it > 0 }?.let { formatMegabytes(it) },
                 record.quality,
