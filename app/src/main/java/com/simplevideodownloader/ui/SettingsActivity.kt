@@ -1,11 +1,7 @@
 package com.simplevideodownloader.ui
 
 import android.os.Bundle
-import android.text.InputFilter
-import android.text.InputType
 import android.text.format.DateFormat
-import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
@@ -75,24 +71,16 @@ class SettingsActivity : AppCompatActivity() {
                 true
             }
 
-            findPreference<Preference>("app_pin")?.setOnPreferenceClickListener {
-                if (AppLock.isEnabled(requireContext())) {
-                    MaterialAlertDialogBuilder(requireContext())
-                        .setTitle(R.string.pref_pin)
-                        .setItems(arrayOf(getString(R.string.pin_change), getString(R.string.pin_remove))) { _, which ->
-                            if (which == 0) askNewPin() else {
-                                AppLock.setPin(requireContext(), null)
-                                Toast.makeText(requireContext(), R.string.pin_removed, Toast.LENGTH_SHORT).show()
-                                refreshPinSummary()
-                            }
-                        }
-                        .show()
+            findPreference<Preference>(AppLock.PREF_ENABLED)?.setOnPreferenceChangeListener { _, enabled ->
+                // Solo se puede activar si el teléfono tiene huella (o bloqueo de pantalla) configurado.
+                if (enabled == true && !AppLock.isAvailable(requireContext())) {
+                    Toast.makeText(requireContext(), R.string.lock_unavailable, Toast.LENGTH_LONG).show()
+                    false
                 } else {
-                    askNewPin()
+                    AppLock.unlocked = true
+                    true
                 }
-                true
             }
-            refreshPinSummary()
 
             findPreference<Preference>("about")?.summary = getString(R.string.pref_about_summary, BuildConfig.VERSION_NAME)
             refreshAllowlistSummary()
@@ -118,46 +106,6 @@ class SettingsActivity : AppCompatActivity() {
             val sites = AdBlocker.allowlist()
             findPreference<Preference>("adblock_allowlist_view")?.summary =
                 if (sites.isEmpty()) getString(R.string.pref_allowlist_summary_empty) else sites.sorted().joinToString(", ")
-        }
-
-        private fun refreshPinSummary() {
-            findPreference<Preference>("app_pin")?.setSummary(
-                if (AppLock.isEnabled(requireContext())) R.string.pref_pin_on else R.string.pref_pin_off
-            )
-        }
-
-        /** Pide el PIN nuevo dos veces y lo guarda si coinciden. */
-        private fun askNewPin(first: String? = null) {
-            val input = EditText(requireContext()).apply {
-                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
-                filters = arrayOf(InputFilter.LengthFilter(AppLock.PIN_LENGTH))
-                setSingleLine()
-            }
-            val container = FrameLayout(requireContext()).apply {
-                val pad = (20 * resources.displayMetrics.density).toInt()
-                setPadding(pad, pad / 2, pad, 0)
-                addView(input)
-            }
-            MaterialAlertDialogBuilder(requireContext())
-                .setTitle(if (first == null) R.string.pin_new else R.string.pin_confirm)
-                .setView(container)
-                .setNegativeButton(R.string.cancel, null)
-                .setPositiveButton(R.string.save) { _, _ ->
-                    val pin = input.text.toString()
-                    val ctx = context ?: return@setPositiveButton
-                    when {
-                        pin.length != AppLock.PIN_LENGTH -> Toast.makeText(ctx, R.string.pin_too_short, Toast.LENGTH_SHORT).show()
-                        first == null -> askNewPin(pin)
-                        pin != first -> Toast.makeText(ctx, R.string.pin_mismatch, Toast.LENGTH_SHORT).show()
-                        else -> {
-                            AppLock.setPin(ctx, pin)
-                            Toast.makeText(ctx, R.string.pin_saved, Toast.LENGTH_SHORT).show()
-                            refreshPinSummary()
-                        }
-                    }
-                }
-                .show()
-            input.requestFocus()
         }
 
         private fun updateLists() {

@@ -5,31 +5,27 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
+import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.preference.PreferenceManager
-import java.security.MessageDigest
 
 /**
- * PIN de 4 dígitos para entrar a la app (se activa en Ajustes). Se pide al abrir la app y cada vez que se
- * vuelve a ella después de haberla dejado en segundo plano. Solo se guarda un hash del PIN.
+ * Bloqueo con huella (se activa en Ajustes). Se pide al abrir la app y cada vez que se vuelve a ella después
+ * de haberla dejado en segundo plano. Si la huella falla se puede usar el bloqueo de pantalla del teléfono.
  */
 object AppLock {
-    private const val PREF_PIN_HASH = "app_pin_hash"
-    const val PIN_LENGTH = 4
+    const val PREF_ENABLED = "lock_biometric"
+    const val AUTHENTICATORS = BIOMETRIC_WEAK or DEVICE_CREDENTIAL
 
     @Volatile var unlocked = false
     private var started = 0
 
-    fun isEnabled(context: Context) = prefs(context).getString(PREF_PIN_HASH, null) != null
+    fun isEnabled(context: Context) = PreferenceManager.getDefaultSharedPreferences(context).getBoolean(PREF_ENABLED, false)
 
-    fun check(context: Context, pin: String) = prefs(context).getString(PREF_PIN_HASH, null) == hash(pin)
-
-    /** Guarda un PIN nuevo, o lo quita con null. */
-    fun setPin(context: Context, pin: String?) {
-        prefs(context).edit().apply {
-            if (pin == null) remove(PREF_PIN_HASH) else putString(PREF_PIN_HASH, hash(pin))
-        }.apply()
-        unlocked = true
-    }
+    /** Si el teléfono tiene huella (o un bloqueo de pantalla) configurado para poder usarlo. */
+    fun isAvailable(context: Context) =
+        BiometricManager.from(context).canAuthenticate(AUTHENTICATORS) == BiometricManager.BIOMETRIC_SUCCESS
 
     fun register(app: Application) {
         app.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
@@ -43,7 +39,7 @@ object AppLock {
             override fun onActivityStopped(activity: Activity) {
                 started--
                 // Toda la app pasó a segundo plano (y no es solo un giro de pantalla): se vuelve a bloquear.
-                if (started <= 0 && !activity.isChangingConfigurations) unlocked = false
+                if (started <= 0 && !activity.isChangingConfigurations && activity !is LockActivity) unlocked = false
             }
 
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
@@ -53,9 +49,4 @@ object AppLock {
             override fun onActivityDestroyed(activity: Activity) = Unit
         })
     }
-
-    private fun prefs(context: Context) = PreferenceManager.getDefaultSharedPreferences(context)
-
-    private fun hash(pin: String): String =
-        MessageDigest.getInstance("SHA-256").digest("svd-pin:$pin".toByteArray()).joinToString("") { "%02x".format(it) }
 }

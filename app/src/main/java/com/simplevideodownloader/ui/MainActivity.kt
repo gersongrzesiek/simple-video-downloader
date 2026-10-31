@@ -629,12 +629,32 @@ class MainActivity : AppCompatActivity(), Tab.Host {
                 newTab()
                 binding.urlInput.requestFocus()
             }
+            R.id.action_history -> showHistory()
             R.id.action_favorite -> toggleFavorite()
             R.id.action_block_here -> toggleBlockingHere()
             R.id.action_settings -> startActivity(Intent(this, SettingsActivity::class.java))
             else -> return false
         }
         return true
+    }
+
+    /** Páginas visitadas, de la más reciente a la más antigua; tocar una la abre. */
+    private fun showHistory() {
+        val sites = browserStore.history()
+        val builder = MaterialAlertDialogBuilder(this).setTitle(R.string.history)
+        if (sites.isEmpty()) {
+            builder.setMessage(R.string.history_empty).setPositiveButton(R.string.close, null).show()
+            return
+        }
+        val adapter = SuggestionAdapter().apply { submit(sites) }
+        builder
+            .setAdapter(adapter) { _, which -> openUrl(adapter.getItem(which).url, newTab = false) }
+            .setNegativeButton(R.string.close, null)
+            .setNeutralButton(R.string.history_clear) { _, _ ->
+                browserStore.clearHistory()
+                Toast.makeText(this, R.string.history_cleared, Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
 
     private fun toggleFavorite() {

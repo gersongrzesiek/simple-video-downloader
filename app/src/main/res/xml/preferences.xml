@@ -36,9 +36,11 @@
             app:key="home_list"
             app:summary="@string/pref_home_list_summary"
             app:title="@string/pref_home_list" />
-        <Preference
-            app:key="app_pin"
-            app:title="@string/pref_pin" />
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="lock_biometric"
+            app:summary="@string/pref_lock_summary"
+            app:title="@string/pref_lock" />
     </PreferenceCategory>
     <PreferenceCategory app:title="@string/pref_category_about">
         <Preference

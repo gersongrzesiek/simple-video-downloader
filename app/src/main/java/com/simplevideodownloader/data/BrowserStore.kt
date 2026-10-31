@@ -113,6 +113,16 @@ class BrowserStore private constructor(context: Context) {
             .take(limit)
     }
 
+    /** Páginas visitadas, la más reciente primero. */
+    @Synchronized
+    fun history(): List<Site> = history.toList()
+
+    @Synchronized
+    fun clearHistory() {
+        history.clear()
+        save()
+    }
+
     @Synchronized
     fun removeTopSite(url: String) {
         DomainUtils.hostOf(url)?.removePrefix("www.")?.let { visits.remove(it) }

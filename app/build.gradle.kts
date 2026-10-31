@@ -50,6 +50,7 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.preference:preference-ktx:1.2.1")
+    implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.fragment:fragment-ktx:1.8.5")
     implementation("androidx.drawerlayout:drawerlayout:1.2.0")
     implementation("androidx.media3:media3-exoplayer:1.4.1")

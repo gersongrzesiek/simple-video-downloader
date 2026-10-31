@@ -8,12 +8,15 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.text.Editable
+import android.text.TextWatcher
 import android.text.format.DateUtils
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupMenu
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.isVisible
@@ -27,7 +30,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.simplevideodownloader.R
 import com.simplevideodownloader.data.DownloadRecord
 import com.simplevideodownloader.data.DownloadStore
-import com.simplevideodownloader.databinding.FragmentListBinding
+import com.simplevideodownloader.databinding.FragmentCompletedBinding
 import com.simplevideodownloader.databinding.ItemCompletedBinding
 import com.simplevideodownloader.download.Downloads
 import com.simplevideodownloader.download.Thumbnails
@@ -36,44 +39,112 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** Pestaña "Terminado": vídeos descargados con miniatura y peso. Tocar uno lo reproduce. */
+/**
+ * Pestaña "Terminado": vídeos descargados con miniatura y peso. Tocar uno lo reproduce. Arriba hay un buscador
+ * por título y un botón para elegir varios vídeos y eliminarlos de una vez.
+ */
 class CompletedFragment : Fragment() {
 
-    private var _binding: FragmentListBinding? = null
+    private var _binding: FragmentCompletedBinding? = null
     private val binding get() = _binding!!
     private val adapter = Adapter()
     private lateinit var store: DownloadStore
-    /** Descarga cuyo borrado está esperando la confirmación del sistema (Android 11+). */
-    private var pendingDeleteId: String? = null
+    /** Descargas cuyo borrado está esperando la confirmación del sistema (Android 11+). */
+    private var pendingDeleteIds: List<String> = emptyList()
+    private var allDone: List<DownloadRecord> = emptyList()
+    private var query = ""
+    /** Modo selección para eliminar varios: ids marcados (null = no se está seleccionando). */
+    private var selection: MutableSet<String>? = null
 
     private val deleteRequest = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
-        val id = pendingDeleteId ?: return@registerForActivityResult
-        pendingDeleteId = null
-        if (result.resultCode == Activity.RESULT_OK) {
-            store.remove(id)
+        val ids = pendingDeleteIds
+        pendingDeleteIds = emptyList()
+        if (result.resultCode == Activity.RESULT_OK && ids.isNotEmpty()) {
+            ids.forEach(store::remove)
             Toast.makeText(requireContext(), R.string.deleted, Toast.LENGTH_SHORT).show()
         }
     }
 
+    private val exitSelectionOnBack = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() = setSelecting(false)
+    }
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
-        _binding = FragmentListBinding.inflate(inflater, container, false)
+        _binding = FragmentCompletedBinding.inflate(inflater, container, false)
         return binding.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         store = DownloadStore.get(requireContext())
-        binding.empty.setText(R.string.done_empty)
         binding.list.layoutManager = LinearLayoutManager(requireContext())
         binding.list.adapter = adapter
+        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, exitSelectionOnBack)
+
+        binding.search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(text: Editable) {
+                query = text.toString().trim()
+                binding.clearSearch.isVisible = text.isNotEmpty()
+                render()
+            }
+        })
+        binding.clearSearch.setOnClickListener { binding.search.text.clear() }
+        binding.deleteMode.setOnClickListener { setSelecting(true) }
+        binding.cancelSelection.setOnClickListener { setSelecting(false) }
+        binding.selectAll.setOnClickListener {
+            val chosen = selection ?: return@setOnClickListener
+            val visible = visibleRecords().map { it.id }
+            if (chosen.containsAll(visible)) chosen.removeAll(visible.toSet()) else chosen.addAll(visible)
+            render()
+        }
+        binding.deleteSelected.setOnClickListener {
+            val ids = selection ?: return@setOnClickListener
+            val records = allDone.filter { it.id in ids }
+            if (records.isNotEmpty()) confirmDelete(records)
+        }
+
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 store.records.collect { all ->
-                    val done = all.filter { it.status == DownloadRecord.Status.DONE }
-                    adapter.submit(done)
-                    _binding?.empty?.isVisible = done.isEmpty()
+                    allDone = all.filter { it.status == DownloadRecord.Status.DONE }
+                    selection?.retainAll(allDone.map { it.id }.toSet())
+                    render()
                 }
             }
         }
+    }
+
+    /** Los vídeos que coinciden con la búsqueda (sin distinguir mayúsculas ni acentos). */
+    private fun visibleRecords(): List<DownloadRecord> {
+        if (query.isEmpty()) return allDone
+        val q = normalize(query)
+        return allDone.filter { normalize(displayName(it.request.fileName)).contains(q) }
+    }
+
+    private fun normalize(text: String) =
+        java.text.Normalizer.normalize(text.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
+
+    private fun render() {
+        val b = _binding ?: return
+        val visible = visibleRecords()
+        adapter.submit(visible)
+        b.empty.isVisible = visible.isEmpty()
+        b.empty.text = if (allDone.isNotEmpty() && query.isNotEmpty()) getString(R.string.no_search_results, query) else getString(R.string.done_empty)
+        val chosen = selection
+        b.searchBar.isVisible = chosen == null
+        b.selectionBar.isVisible = chosen != null
+        if (chosen != null) {
+            b.selectionCount.text = getString(R.string.selected_count, chosen.size)
+            b.deleteSelected.isEnabled = chosen.isNotEmpty()
+        }
+        b.deleteMode.isEnabled = allDone.isNotEmpty()
+    }
+
+    private fun setSelecting(on: Boolean) {
+        selection = if (on) HashSet() else null
+        exitSelectionOnBack.isEnabled = on
+        render()
     }
 
     override fun onDestroyView() {
@@ -125,7 +196,7 @@ class CompletedFragment : Fragment() {
                 when (item.itemId) {
                     R.id.action_open_site -> openSite(record)
                     R.id.action_share -> share(record)
-                    R.id.action_delete_file -> confirmDelete(record)
+                    R.id.action_delete_file -> confirmDelete(listOf(record))
                     R.id.action_remove_entry -> store.remove(record.id)
                 }
                 true
@@ -156,44 +227,57 @@ class CompletedFragment : Fragment() {
         }
     }
 
-    private fun confirmDelete(record: DownloadRecord) {
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.delete_confirm_title)
-            .setMessage(getString(R.string.delete_confirm_message, record.request.fileName))
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.delete) { _, _ -> deleteFile(record) }
+    private fun confirmDelete(records: List<DownloadRecord>) {
+        val builder = MaterialAlertDialogBuilder(requireContext())
+        if (records.size == 1) {
+            builder.setTitle(R.string.delete_confirm_title)
+                .setMessage(getString(R.string.delete_confirm_message, displayName(records[0].request.fileName)))
+        } else {
+            builder.setTitle(getString(R.string.delete_many_title, records.size)).setMessage(R.string.delete_many_message)
+        }
+        builder.setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.delete) { _, _ -> deleteFiles(records) }
             .show()
     }
 
-    private fun deleteFile(record: DownloadRecord) {
+    /** Borra los archivos; los que Android no deja borrar directamente se piden juntos en una sola confirmación. */
+    private fun deleteFiles(records: List<DownloadRecord>) {
         val ctx = requireContext()
-        val uri = record.uri?.let(Uri::parse)
-        if (uri == null) {
-            store.remove(record.id)
-            return
-        }
-        val deleted = try {
-            if (uri.scheme == "file") {
-                val file = uri.path?.let(::File)
-                file == null || !file.exists() || file.delete()
+        var deleted = 0
+        var failed = 0
+        val needsConfirmation = ArrayList<DownloadRecord>()
+        for (record in records) {
+            val uri = record.uri?.let(Uri::parse)
+            val ok: Boolean? = try {
+                when {
+                    uri == null -> true
+                    uri.scheme == "file" -> uri.path?.let(::File)?.let { !it.exists() || it.delete() } ?: true
+                    else -> ctx.contentResolver.delete(uri, null, null) > 0 || !fileExists(uri)
+                }
+            } catch (e: SecurityException) {
+                // Android 11+: si el archivo ya no es "nuestro" (p. ej. tras reinstalar), el sistema pide confirmación.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) null else false
+            }
+            if (ok == null) {
+                needsConfirmation += record
+            } else if (ok) {
+                store.remove(record.id)
+                deleted++
             } else {
-                ctx.contentResolver.delete(uri, null, null) > 0 || !fileExists(uri)
+                failed++
             }
-        } catch (e: SecurityException) {
-            // Android 11+: si el archivo ya no es "nuestro" (p. ej. tras reinstalar), el sistema pide confirmación.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                pendingDeleteId = record.id
-                val sender = MediaStore.createDeleteRequest(ctx.contentResolver, listOf(uri)).intentSender
-                deleteRequest.launch(IntentSenderRequest.Builder(sender).build())
-                return
-            }
-            false
         }
-        if (deleted) {
-            store.remove(record.id)
-            Toast.makeText(ctx, R.string.deleted, Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(ctx, R.string.delete_failed, Toast.LENGTH_SHORT).show()
+        setSelecting(false)
+        if (needsConfirmation.isNotEmpty() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            pendingDeleteIds = needsConfirmation.map { it.id }
+            val uris = needsConfirmation.mapNotNull { it.uri?.let(Uri::parse) }
+            val sender = MediaStore.createDeleteRequest(ctx.contentResolver, uris).intentSender
+            deleteRequest.launch(IntentSenderRequest.Builder(sender).build())
+        }
+        when {
+            failed > 0 -> Toast.makeText(ctx, R.string.delete_failed, Toast.LENGTH_SHORT).show()
+            deleted > 1 -> Toast.makeText(ctx, getString(R.string.deleted_many, deleted), Toast.LENGTH_SHORT).show()
+            deleted == 1 -> Toast.makeText(ctx, R.string.deleted, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -230,7 +314,26 @@ class CompletedFragment : Fragment() {
             b.duration.text = DateUtils.formatElapsedTime(record.durationMs / 1000)
             if (record.durationMs <= 0) fillDuration(record)
 
-            b.root.setOnClickListener { play(record) }
+            val chosen = selection
+            b.check.isVisible = chosen != null
+            b.check.isChecked = chosen?.contains(record.id) == true
+            b.more.isVisible = chosen == null
+            b.root.setOnClickListener {
+                val current = selection
+                if (current == null) {
+                    play(record)
+                } else {
+                    if (!current.remove(record.id)) current.add(record.id)
+                    render()
+                }
+            }
+            // Mantener pulsado un vídeo también empieza a seleccionar.
+            b.root.setOnLongClickListener {
+                if (selection == null) setSelecting(true)
+                selection?.add(record.id)
+                render()
+                true
+            }
             b.more.setOnClickListener { showMenu(it, record) }
         }
     }
