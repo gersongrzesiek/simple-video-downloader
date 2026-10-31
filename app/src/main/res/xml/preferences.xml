@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
+    <PreferenceCategory app:title="@string/pref_category_adblock">
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="adblock_enabled"
+            app:title="@string/pref_adblock_enabled" />
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:dependency="adblock_enabled"
+            app:key="adblock_cosmetic"
+            app:summary="@string/pref_adblock_cosmetic_summary"
+            app:title="@string/pref_adblock_cosmetic" />
+        <MultiSelectListPreference
+            app:dependency="adblock_enabled"
+            app:key="adblock_lists"
+            app:title="@string/pref_adblock_lists" />
+        <Preference
+            app:dependency="adblock_enabled"
+            app:key="adblock_update"
+            app:title="@string/pref_adblock_update" />
+        <Preference
+            app:key="adblock_allowlist_view"
+            app:title="@string/pref_allowlist" />
+    </PreferenceCategory>
+    <PreferenceCategory app:title="@string/pref_category_detection">
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="autoplay_detect"
+            app:summary="@string/pref_autoplay_detect_summary"
+            app:title="@string/pref_autoplay_detect" />
+    </PreferenceCategory>
+    <PreferenceCategory app:title="@string/pref_category_app">
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="home_list"
+            app:summary="@string/pref_home_list_summary"
+            app:title="@string/pref_home_list" />
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="lock_biometric"
+            app:summary="@string/pref_lock_summary"
+            app:title="@string/pref_lock" />
+    </PreferenceCategory>
+    <PreferenceCategory app:title="@string/pref_category_about">
+        <Preference
+            app:key="about"
+            app:selectable="false"
+            app:title="@string/app_name" />
+    </PreferenceCategory>
+</PreferenceScreen>
